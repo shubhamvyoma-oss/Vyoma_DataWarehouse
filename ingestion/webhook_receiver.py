@@ -746,15 +746,24 @@ def status():
 def webhook():
 
     # -------------------------------------------------------------------------
-    # STEP 1: Parse the JSON body
-    # silent=True means Flask returns None instead of raising a 400 error
-    # if the body is missing or not valid JSON. We handle None ourselves below.
+    # STEP 1: Capture and parse the raw request body.
+    #
+    # We log the raw body FIRST before any processing. This means even if our
+    # parsing logic fails, we have a record of exactly what Edmingle sent us.
+    # This is critical for debugging payload structure differences.
+    #
+    # force=True tells Flask to parse the body as JSON regardless of the
+    # Content-Type header. Without this, get_json() returns None whenever
+    # Edmingle sends events without 'Content-Type: application/json', which
+    # causes silent data loss — we return 200 but store nothing.
     # -------------------------------------------------------------------------
-    payload = request.get_json(silent=True)
+    raw_body = request.get_data(as_text=True)
+    log.info(f"Raw request received — Content-Type: {request.content_type} — Body: {raw_body[:300]}")
+
+    payload = request.get_json(silent=True, force=True)
 
     if payload is None:
-        # Empty body or invalid JSON — Edmingle should not send this, but handle it safely
-        log.warning("Received a request with no valid JSON body — returning 200 anyway")
+        log.warning(f"Could not parse body as JSON — returning 200. Body was: {raw_body[:300]}")
         return jsonify({'status': 'received'}), 200
 
     # -------------------------------------------------------------------------
@@ -781,7 +790,10 @@ def webhook():
         event_id        = f"{event_type}-{event_ts_str}" if event_ts_str else event_type
         is_live_mode    = event_block.get('livemode', True)
         event_timestamp = None  # event_ts is an ISO string, not a Unix integer
-        data            = {}    # no data payload in validation pings
+        # Extract data from inside the event block if it exists.
+        # Previously this was hardcoded to {} which would silently discard all
+        # student/session/transaction data for any event using the nested structure.
+        data            = event_block.get('data', {})
     else:
         # Normal structure — used by all real Edmingle event types
         event_id        = payload.get('id')
