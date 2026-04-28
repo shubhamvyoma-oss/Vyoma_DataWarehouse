@@ -757,12 +757,38 @@ def webhook():
         log.warning("Received a request with no valid JSON body — returning 200 anyway")
         return jsonify({'status': 'received'}), 200
 
-    # Extract the three top-level fields present in every Edmingle event
-    event_id        = payload.get('id')             # unique event identifier
-    event_type      = payload.get('event_name')     # e.g. "user.user_created"
-    event_timestamp = payload.get('event_timestamp') # Unix UTC integer
-    is_live_mode    = payload.get('is_live_mode', True)
-    data            = payload.get('data', {})        # the nested payload object
+    # -------------------------------------------------------------------------
+    # Detect which payload structure Edmingle sent.
+    #
+    # Normal events use top-level fields:
+    #   { "id": "...", "event_name": "user.user_created", "data": {...} }
+    #
+    # The url.validate ping uses a different structure — everything is nested
+    # inside an 'event' key and the field names are different:
+    #   { "event": { "event_name": "url.validate", "livemode": false,
+    #                "event_ts": "2026-04-28T08:05:20+00:00" } }
+    #
+    # We normalise both into the same local variables so the rest of the
+    # function does not need to know which structure arrived.
+    # -------------------------------------------------------------------------
+    if 'event' in payload and 'id' not in payload:
+        # Nested structure — url.validate ping from Edmingle
+        event_block     = payload['event']
+        event_type      = event_block.get('event_name')
+        event_ts_str    = event_block.get('event_ts', '')
+        # This format has no 'id' field. Build a deterministic event_id from
+        # the event_ts string so Bronze can store it with a valid unique key.
+        event_id        = f"{event_type}-{event_ts_str}" if event_ts_str else event_type
+        is_live_mode    = event_block.get('livemode', True)
+        event_timestamp = None  # event_ts is an ISO string, not a Unix integer
+        data            = {}    # no data payload in validation pings
+    else:
+        # Normal structure — used by all real Edmingle event types
+        event_id        = payload.get('id')
+        event_type      = payload.get('event_name')
+        event_timestamp = payload.get('event_timestamp')
+        is_live_mode    = payload.get('is_live_mode', True)
+        data            = payload.get('data', {})
 
     if not event_id or not event_type:
         # Edmingle always sends these — log if they are missing and move on
@@ -793,6 +819,16 @@ def webhook():
         # Always close the connection — whether we succeeded or failed
         if conn_bronze:
             conn_bronze.close()
+
+    # -------------------------------------------------------------------------
+    # url.validate is Edmingle's infrastructure health check — not a real event.
+    # It is already stored in Bronze above as a record that validation occurred.
+    # Skip Silver routing entirely: there is no Silver table for this event type
+    # and it carries no student or session data.
+    # -------------------------------------------------------------------------
+    if event_type == 'url.validate':
+        log.info("Validation ping stored in Bronze — skipping Silver routing.")
+        return jsonify({'status': 'received'}), 200
 
     # -------------------------------------------------------------------------
     # STEPS 3, 4, 5: Route to Silver + mark Bronze as routed
