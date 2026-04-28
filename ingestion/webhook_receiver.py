@@ -28,9 +28,11 @@
 # atexit            : registers the pool-close function to run on interpreter exit
 # logging           : writes timestamped messages to terminal and log file
 # logging.handlers  : RotatingFileHandler — log files with automatic size cap
+# os                : os.getenv() reads environment variables loaded by dotenv
 # re                : regular expressions used by the PII masking function
 # signal            : catches SIGTERM / SIGINT for graceful pool shutdown
 # sys               : sys.exit() called from the signal handler
+# dotenv            : loads variables from .env into os.environ at startup
 # psycopg2          : Python driver for PostgreSQL
 # psycopg2.extras   : RealDictCursor (rows as dicts) and Json (JSONB adapter)
 # psycopg2.pool     : ThreadedConnectionPool — reuse connections across requests
@@ -38,14 +40,21 @@
 import atexit
 import logging
 import logging.handlers
+import os
 import re
 import signal
 import sys
 
+from dotenv import load_dotenv
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 from flask import Flask, request, jsonify
+
+# Load .env from the project root (one directory above ingestion/).
+# override=False means existing shell environment variables take precedence,
+# so production deployments can set variables without a .env file.
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'), override=False)
 
 
 # =============================================================================
@@ -110,11 +119,11 @@ app = Flask(__name__)
 # those sockets corrupts PostgreSQL sessions. The post_fork() function below
 # closes the inherited pool and opens a fresh one inside each worker.
 # =============================================================================
-DB_HOST = 'localhost'
-DB_PORT = 5432
-DB_NAME = 'edmingle_analytics'
-DB_USER = 'postgres'
-DB_PASS = 'Svyoma'
+DB_HOST = os.getenv('DB_HOST', 'localhost')
+DB_PORT = int(os.getenv('DB_PORT', 5432))
+DB_NAME = os.getenv('DB_NAME', 'edmingle_analytics')
+DB_USER = os.getenv('DB_USER', 'postgres')
+DB_PASS = os.getenv('DB_PASS', '')
 
 _pool = None   # module-level reference; replaced by _init_pool() at startup and in post_fork()
 
@@ -1178,5 +1187,6 @@ def webhook():
 # full error tracebacks in the terminal. Disable this in production.
 # =============================================================================
 if __name__ == '__main__':
-    log.info("Starting Edmingle webhook receiver on port 5000...")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    _port = int(os.getenv('FLASK_PORT', 5000))
+    log.info(f"Starting Edmingle webhook receiver on port {_port}...")
+    app.run(host='0.0.0.0', port=_port, debug=True)
