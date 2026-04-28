@@ -382,24 +382,31 @@ def route_user_updated(conn, event_id, event_type, data, event_timestamp):
     # COALESCE in the upsert preserves existing values for any field not included.
     cur = conn.cursor()
 
-    user_id        = data.get('user_id')
-    email          = data.get('email')
-    full_name      = data.get('full_name')
-    contact_number = data.get('contact_number')
+    # Real Edmingle user.user_updated payloads nest all user fields under a 'user' key:
+    #   data = {"user": {"user_id": 123, "email": "...", "city": "...", ...}, "system_fields": [...]}
+    # Test events use a flat structure with fields directly at the root of data.
+    # data.get('user') or data: if 'user' key exists and is non-empty use it,
+    # otherwise fall back to data itself (covers test event format).
+    user_obj       = data.get('user') or data
+    user_id        = user_obj.get('user_id') or user_obj.get('id')
+    email          = user_obj.get('email')
+    # Real events use 'name'; test events use 'full_name'
+    full_name      = user_obj.get('name') or user_obj.get('full_name')
+    # Real events use 'phone'; test events use 'contact_number'
+    contact_number = user_obj.get('phone') or user_obj.get('contact_number')
 
     # updated_at is when the profile change happened.
     # Fall back to event_timestamp if updated_at is absent.
-    updated_at_unix = data.get('updated_at') or event_timestamp
+    updated_at_unix = user_obj.get('updated_at') or event_timestamp
 
-    # system_fields arrives as a LIST of field objects in real Edmingle events:
-    #   [{"field_display_name": "City", "field_value": "Mumbai", ...}, ...]
-    # _pluck_system_field() searches the list by name (case-insensitive) and
-    # also handles the flat-dict format used by test events.
+    # Location fields: try user_obj first (real events have them directly on the user object),
+    # then fall back to system_fields list (some Edmingle versions put them there instead).
     system_fields_raw = data.get('system_fields')
-    city           = _pluck_system_field(system_fields_raw, 'city',           'City')
-    state          = _pluck_system_field(system_fields_raw, 'state',          'State')
-    address        = _pluck_system_field(system_fields_raw, 'address',        'Address')
-    pincode        = _pluck_system_field(system_fields_raw, 'pincode',        'Pincode',        'pin code')
+    city    = user_obj.get('city')    or _pluck_system_field(system_fields_raw, 'city',    'City')
+    state   = user_obj.get('state')   or _pluck_system_field(system_fields_raw, 'state',   'State')
+    address = user_obj.get('address') or _pluck_system_field(system_fields_raw, 'address', 'Address')
+    pincode = user_obj.get('pincode') or _pluck_system_field(system_fields_raw, 'pincode', 'Pincode', 'pin code')
+    # Parent fields are only in system_fields — not on the user object itself
     parent_name    = _pluck_system_field(system_fields_raw, 'parent_name',    'Parent Name',    'parent name')
     parent_email   = _pluck_system_field(system_fields_raw, 'parent_email',   'Parent Email',   'parent email')
     parent_contact = _pluck_system_field(system_fields_raw, 'parent_contact', 'Parent Contact', 'Parent Phone', 'parent phone')
@@ -820,12 +827,18 @@ EVENT_ROUTER = {
     'transaction.user_purchase_failed':    route_transaction,
 
     # Session events → silver.sessions
-    # Note: Edmingle sends 'session_update' (no 'd') and 'session_cancel' (no 'led')
+    # Edmingle's exact event name spellings (confirmed from live traffic):
+    #   session_update    — no 'd' at the end
+    #   session_cancel    — no 'led' at the end
+    #   session_reminder  — no 's' at the end (live events); reminders — test events
+    #   session_start     — no 'd' at the end (live events); session_started — test events
     'session.session_created':             route_session,
     'session.session_update':              route_session,
     'session.session_cancel':              route_session,
-    'session.session_started':             route_session,
-    'session.session_reminders':           route_session,
+    'session.session_started':             route_session,   # test events
+    'session.session_start':               route_session,   # real Edmingle events
+    'session.session_reminders':           route_session,   # test events
+    'session.session_reminder':            route_session,   # real Edmingle events
 
     # Assessment events → silver.assessments
     'assessments.test_submitted':          route_assessment,
