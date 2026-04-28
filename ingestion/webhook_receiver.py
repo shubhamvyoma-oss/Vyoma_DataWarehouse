@@ -339,6 +339,43 @@ def route_user_created(conn, event_id, event_type, data, event_timestamp):
     cur.close()
 
 
+def _pluck_system_field(system_fields, *name_variants):
+    # Real Edmingle sends system_fields as a list of field objects:
+    #   [{"field_display_name": "City", "field_value": "Mumbai", ...}, ...]
+    # This function searches the list for any element whose field_display_name
+    # or field_name matches one of the supplied variants (case-insensitive).
+    # It also handles the old flat-dict format used by test events so test_all_events.py
+    # keeps working without changes.
+    if isinstance(system_fields, dict):
+        for name in name_variants:
+            val = system_fields.get(name)
+            if val is not None:
+                return val
+        return None
+
+    if not isinstance(system_fields, list):
+        return None
+
+    # Build a lookup: lowercased name → value, from both field_display_name and field_name
+    lookup = {}
+    for field in system_fields:
+        if not isinstance(field, dict):
+            continue
+        display = (field.get('field_display_name') or '').lower().strip()
+        fname   = (field.get('field_name')         or '').lower().strip()
+        value   = field.get('field_value')
+        if display:
+            lookup[display] = value
+        if fname:
+            lookup[fname] = value
+
+    for name in name_variants:
+        val = lookup.get(name.lower().strip())
+        if val is not None:
+            return val
+    return None
+
+
 def route_user_updated(conn, event_id, event_type, data, event_timestamp):
     # Handles: user.user_updated
     # Only CHANGED fields are sent in this event — not the full student record.
@@ -354,17 +391,18 @@ def route_user_updated(conn, event_id, event_type, data, event_timestamp):
     # Fall back to event_timestamp if updated_at is absent.
     updated_at_unix = data.get('updated_at') or event_timestamp
 
-    # system_fields is a nested object inside the payload.
-    # We use 'or {}' so that if system_fields is missing, we get an empty dict
-    # instead of None — making the .get() calls below always safe.
-    system_fields  = data.get('system_fields') or {}
-    city           = system_fields.get('city')
-    state          = system_fields.get('state')
-    address        = system_fields.get('address')
-    pincode        = system_fields.get('pincode')
-    parent_name    = system_fields.get('parent_name')
-    parent_email   = system_fields.get('parent_email')
-    parent_contact = system_fields.get('parent_contact')
+    # system_fields arrives as a LIST of field objects in real Edmingle events:
+    #   [{"field_display_name": "City", "field_value": "Mumbai", ...}, ...]
+    # _pluck_system_field() searches the list by name (case-insensitive) and
+    # also handles the flat-dict format used by test events.
+    system_fields_raw = data.get('system_fields')
+    city           = _pluck_system_field(system_fields_raw, 'city',           'City')
+    state          = _pluck_system_field(system_fields_raw, 'state',          'State')
+    address        = _pluck_system_field(system_fields_raw, 'address',        'Address')
+    pincode        = _pluck_system_field(system_fields_raw, 'pincode',        'Pincode',        'pin code')
+    parent_name    = _pluck_system_field(system_fields_raw, 'parent_name',    'Parent Name',    'parent name')
+    parent_email   = _pluck_system_field(system_fields_raw, 'parent_email',   'Parent Email',   'parent email')
+    parent_contact = _pluck_system_field(system_fields_raw, 'parent_contact', 'Parent Contact', 'Parent Phone', 'parent phone')
 
     # custom_fields is an array of objects like:
     #   [{"field_name": "occupation", "field_value": "Engineer", ...}, ...]
