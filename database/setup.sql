@@ -113,6 +113,33 @@ CREATE TABLE IF NOT EXISTS bronze.webhook_events (
 
 
 -- =============================================================================
+-- BRONZE LAYER — TABLE 2: bronze.failed_events
+-- Receives any HTTP request that arrived at /webhook but could not be
+-- parsed as JSON, had missing required fields, or caused a Bronze insert error.
+-- This is the final safety net — nothing sent to our server is silently lost.
+-- Use GET /failed to inspect these rows without opening pgAdmin.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS bronze.failed_events (
+
+    -- Auto-incrementing internal row number
+    id             SERIAL PRIMARY KEY,
+
+    -- When our server received the failed request, in IST
+    received_at    TIMESTAMPTZ NOT NULL DEFAULT (NOW() AT TIME ZONE 'Asia/Kolkata'),
+
+    -- Short description of why processing failed, e.g. "JSON parse failed"
+    failure_reason TEXT,
+
+    -- The raw HTTP body as received, truncated to 10 000 characters if enormous
+    raw_body       TEXT,
+
+    -- The Content-Type header from the failed request
+    content_type   TEXT
+);
+
+
+-- =============================================================================
 -- SILVER LAYER — TABLE 1: silver.users
 -- Source events: user.user_created, user.user_updated
 --

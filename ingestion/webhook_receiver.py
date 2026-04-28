@@ -4,59 +4,111 @@
 # PURPOSE : Flask web server that receives webhook events from Edmingle.
 #           Every event is stored in Bronze (raw JSON) first, then routed
 #           to the correct Silver table (structured, typed data).
+#           Any request that cannot be parsed or stored is written to
+#           bronze.failed_events so nothing is silently lost.
 #
 # ENDPOINTS:
 #   POST /webhook  — Receives events from Edmingle. Always returns HTTP 200.
 #   GET  /health   — Checks that the server and database are reachable.
 #   GET  /status   — Shows the last 10 events received (from Bronze).
+#   GET  /failed   — Shows the last 10 events in bronze.failed_events.
 #
-# HOW TO RUN:
+# HOW TO RUN (development):
 #   pip install flask psycopg2-binary
 #   python ingestion/webhook_receiver.py
 #   Server starts at http://localhost:5000
+#
+# HOW TO RUN (production with gunicorn):
+#   gunicorn -w 4 -b 0.0.0.0:5000 ingestion.webhook_receiver:app
 # =============================================================================
 
 
 # =============================================================================
 # IMPORTS
-# flask         : the web framework — lets us define HTTP endpoints
-# json          : converts Python dicts/lists to JSON strings
-# logging       : writes timestamped messages to the terminal
-# psycopg2      : Python driver for connecting to PostgreSQL
-# psycopg2.extras: provides RealDictCursor (rows as dicts) and Json (JSONB adapter)
+# atexit            : registers the pool-close function to run on interpreter exit
+# logging           : writes timestamped messages to terminal and log file
+# logging.handlers  : RotatingFileHandler — log files with automatic size cap
+# re                : regular expressions used by the PII masking function
+# signal            : catches SIGTERM / SIGINT for graceful pool shutdown
+# sys               : sys.exit() called from the signal handler
+# psycopg2          : Python driver for PostgreSQL
+# psycopg2.extras   : RealDictCursor (rows as dicts) and Json (JSONB adapter)
+# psycopg2.pool     : ThreadedConnectionPool — reuse connections across requests
 # =============================================================================
-import json
+import atexit
 import logging
+import logging.handlers
+import re
+import signal
+import sys
+
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 from flask import Flask, request, jsonify
 
 
 # =============================================================================
 # LOGGING SETUP
-# Every event we receive and every step we take gets logged to the terminal.
-# This lets you see exactly what the server is doing without opening pgAdmin.
-# Format: "2024-03-08 05:30:00  INFO  Received event user.user_created"
+# Two handlers run simultaneously:
+#   StreamHandler       — writes to the terminal (visible during development)
+#   RotatingFileHandler — writes to ingestion/webhook_receiver.log
+#                         10 MB per file; the last 5 files are kept
+# Both use the same format: "2024-03-08 05:30:00  INFO  message here"
 # =============================================================================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s  %(levelname)s  %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+_LOG_FORMAT = '%(asctime)s  %(levelname)s  %(message)s'
+_LOG_DATE   = '%Y-%m-%d %H:%M:%S'
+
 log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
+
+# Terminal handler
+_stream_handler = logging.StreamHandler()
+_stream_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE))
+log.addHandler(_stream_handler)
+
+# Rotating file handler — 10 MB max per file, 5 backup files kept
+_file_handler = logging.handlers.RotatingFileHandler(
+    'ingestion/webhook_receiver.log',
+    maxBytes=10 * 1024 * 1024,   # 10 MB
+    backupCount=5,
+)
+_file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE))
+log.addHandler(_file_handler)
+
+
+# =============================================================================
+# PII MASKING
+# mask_pii() replaces email addresses and Indian mobile numbers with tokens
+# before any user-supplied data is written to the log file.
+# Applied to raw request bodies and any field-level log messages that could
+# contain student contact information.
+# =============================================================================
+_EMAIL_RE = re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+')
+_PHONE_RE = re.compile(r'(\+91[\-\s]?|0)?[6-9]\d{9}')
+
+
+def mask_pii(text: str) -> str:
+    text = _EMAIL_RE.sub('[email]', text)
+    text = _PHONE_RE.sub('[phone]', text)
+    return text
 
 
 # =============================================================================
 # FLASK APPLICATION
-# Flask(__name__) creates the web server.
-# __name__ tells Flask which Python module it is running in.
 # =============================================================================
 app = Flask(__name__)
 
 
 # =============================================================================
-# DATABASE CONNECTION SETTINGS
-# Hardcoded as agreed — no environment variables.
+# DATABASE — ThreadedConnectionPool
+# A pool keeps minconn=2 connections open at all times and grows to maxconn=10
+# under load. Connections are reused across requests — no open/close overhead.
+#
+# IMPORTANT: gunicorn forks worker processes at startup. Each worker inherits
+# the parent's open file descriptors, including pool sockets. Workers sharing
+# those sockets corrupts PostgreSQL sessions. The post_fork() function below
+# closes the inherited pool and opens a fresh one inside each worker.
 # =============================================================================
 DB_HOST = 'localhost'
 DB_PORT = 5432
@@ -64,34 +116,99 @@ DB_NAME = 'edmingle_analytics'
 DB_USER = 'postgres'
 DB_PASS = 'Svyoma'
 
+_pool = None   # module-level reference; replaced by _init_pool() at startup and in post_fork()
 
-# =============================================================================
-# HELPER: get_db_connection()
-# Opens a fresh PostgreSQL connection every time it is called.
-# We open one connection for Bronze and a separate one for Silver in each
-# request. This keeps them in separate transactions — if Silver fails and
-# rolls back, the Bronze commit is already saved and unaffected.
-# =============================================================================
-def get_db_connection():
-    return psycopg2.connect(
+
+def _init_pool():
+    global _pool
+    _pool = psycopg2.pool.ThreadedConnectionPool(
+        minconn=2,
+        maxconn=10,
         host=DB_HOST,
         port=DB_PORT,
         dbname=DB_NAME,
         user=DB_USER,
-        password=DB_PASS
+        password=DB_PASS,
     )
+    log.info("Database connection pool initialised.")
+
+
+def get_db_connection():
+    conn = _pool.getconn()
+    # Set a 5-second timeout on every query for this connection.
+    # Prevents a slow or stalled database query from blocking a worker thread.
+    cur = conn.cursor()
+    cur.execute("SET statement_timeout = '5s'")
+    cur.close()
+    conn.commit()
+    return conn
+
+
+def release_db_connection(conn):
+    # Return the connection to the pool — do NOT close it.
+    # Closing would destroy it; the pool reuses it for the next request.
+    _pool.putconn(conn)
+
+
+# Initialise the pool at import time.
+# This covers the development server and single-worker gunicorn.
+_init_pool()
+
+
+# =============================================================================
+# GRACEFUL SHUTDOWN
+# When gunicorn sends SIGTERM to stop a worker, or when the development server
+# receives Ctrl-C (SIGINT), close all pool connections cleanly so PostgreSQL
+# does not accumulate orphaned connections between restarts.
+#
+# _close_pool() does the actual work.
+# _signal_handler() calls it and then exits — atexit will call _close_pool()
+# again, but the _pool = None guard prevents a double close.
+# =============================================================================
+def _close_pool():
+    global _pool
+    if _pool:
+        _pool.closeall()
+        _pool = None
+        log.info("Database connection pool closed.")
+
+
+def _signal_handler(signum, frame):
+    _close_pool()
+    sys.exit(0)
+
+
+atexit.register(_close_pool)
+signal.signal(signal.SIGTERM, _signal_handler)
+signal.signal(signal.SIGINT,  _signal_handler)
+
+
+# =============================================================================
+# GUNICORN POST-FORK HOOK
+# Called by gunicorn inside each worker process immediately after forking.
+# Closes the pool inherited from the parent and opens a fresh one for this
+# worker so no two workers share the same PostgreSQL socket.
+#
+# Wire this up by adding to gunicorn.conf.py:
+#   from ingestion.webhook_receiver import post_fork
+# =============================================================================
+def post_fork(server, worker):
+    global _pool
+    if _pool:
+        _pool.closeall()
+    _init_pool()
 
 
 # =============================================================================
 # BRONZE FUNCTIONS
-# These two functions write to bronze.webhook_events.
-# insert_bronze() stores the raw payload.
-# mark_routed_to_silver() updates the flag after Silver succeeds.
+# insert_bronze         — stores the raw payload in bronze.webhook_events
+# mark_routed_to_silver — flips routed_to_silver = true after Silver succeeds
+# insert_failed_event   — writes to bronze.failed_events (the safety net)
 # =============================================================================
 
 def insert_bronze(conn, event_id, event_type, payload, is_live_mode):
     # ON CONFLICT DO NOTHING: if Edmingle retries and sends the same event_id
-    # again, skip the insert without an error instead of creating a duplicate row.
+    # again, skip silently instead of creating a duplicate row.
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO bronze.webhook_events (event_id, event_type, raw_payload, is_live_mode)
@@ -100,19 +217,18 @@ def insert_bronze(conn, event_id, event_type, payload, is_live_mode):
     """, (
         event_id,
         event_type,
-        # psycopg2.extras.Json() converts a Python dict to the correct format
-        # for a PostgreSQL JSONB column. It handles all nested objects and arrays.
+        # psycopg2.extras.Json() serialises a Python dict to the PostgreSQL JSONB format.
+        # It handles all nested objects and arrays without any manual json.dumps().
         psycopg2.extras.Json(payload),
-        is_live_mode
+        is_live_mode,
     ))
     cur.close()
 
 
 def mark_routed_to_silver(conn, event_id):
-    # Sets routed_to_silver = true after Silver insert succeeds.
-    # This runs in the SAME transaction as the Silver insert.
-    # If Silver fails and the transaction rolls back, this update also rolls back —
-    # which is correct. The event stays marked as unrouted so we can reprocess it.
+    # Runs in the SAME transaction as the Silver insert.
+    # If Silver rolls back, this update rolls back too — event stays unrouted
+    # so we can identify and reprocess it later.
     cur = conn.cursor()
     cur.execute("""
         UPDATE bronze.webhook_events
@@ -120,6 +236,35 @@ def mark_routed_to_silver(conn, event_id):
         WHERE  event_id = %s
     """, (event_id,))
     cur.close()
+
+
+def insert_failed_event(failure_reason, raw_body, content_type):
+    # Writes to bronze.failed_events — the final safety net.
+    # Called whenever a request arrives but cannot be parsed or stored.
+    # Uses its own independent connection so it is never affected by
+    # Bronze or Silver transaction failures.
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO bronze.failed_events (failure_reason, raw_body, content_type)
+            VALUES (%s, %s, %s)
+        """, (
+            failure_reason,
+            raw_body[:10000] if raw_body else None,   # cap at 10 000 chars
+            content_type,
+        ))
+        cur.close()
+        conn.commit()
+        log.info(f"Failed event saved to bronze.failed_events: {failure_reason}")
+    except Exception as e:
+        log.error(f"Could not write to bronze.failed_events: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            release_db_connection(conn)
 
 
 # =============================================================================
@@ -182,7 +327,7 @@ def route_user_created(conn, event_id, event_type, data, event_timestamp):
             contact_number = COALESCE(EXCLUDED.contact_number, silver.users.contact_number),
             institution_id = COALESCE(EXCLUDED.institution_id, silver.users.institution_id),
             -- COALESCE(existing_value, new_value) — note the order is REVERSED here.
-            -- This means: keep the original value if it exists; only set it if it was never set.
+            -- Keep the original value if it exists; only set it if it was never set.
             -- created_at_ist must NEVER be overwritten once it is first set.
             created_at_ist = COALESCE(silver.users.created_at_ist, EXCLUDED.created_at_ist),
             received_at    = EXCLUDED.received_at
@@ -578,7 +723,7 @@ def route_announcement(conn, event_id, event_type, data, event_timestamp):
     # UPSERT on event_id — one row per event.
     cur = conn.cursor()
 
-    # Store the entire data dict as raw JSONB — no field extraction
+    # Store the entire data dict as raw JSONB — no field extraction yet
     raw_data_json = psycopg2.extras.Json(data) if data is not None else None
 
     cur.execute("""
@@ -662,6 +807,40 @@ EVENT_ROUTER = {
 
 
 # =============================================================================
+# FLASK ERROR HANDLERS
+# Edmingle marks our webhook Inactive permanently if it receives anything other
+# than HTTP 200. These handlers ensure that Flask-level errors (wrong path,
+# wrong method, payload too large, unhandled exception) also return 200.
+# =============================================================================
+
+@app.errorhandler(404)
+def handle_404(e):
+    log.warning(f"404 Not Found: {request.path}")
+    return jsonify({'status': 'received'}), 200
+
+
+@app.errorhandler(405)
+def handle_405(e):
+    log.warning(f"405 Method Not Allowed: {request.method} {request.path}")
+    return jsonify({'status': 'received'}), 200
+
+
+@app.errorhandler(413)
+def handle_413(e):
+    # Request body was too large to parse — log to failed_events and return 200
+    # so Edmingle does not mark the webhook Inactive.
+    log.warning(f"413 Request Entity Too Large on {request.path}")
+    insert_failed_event('413 request too large', '', request.content_type)
+    return jsonify({'status': 'received'}), 200
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    log.error(f"500 Internal Server Error: {e}")
+    return jsonify({'status': 'received'}), 200
+
+
+# =============================================================================
 # FLASK ROUTE: GET /health
 # Quick check that the server is running and can reach the database.
 # Returns 200 if healthy, 500 if the database connection fails.
@@ -669,13 +848,16 @@ EVENT_ROUTER = {
 # =============================================================================
 @app.route('/health', methods=['GET'])
 def health():
+    conn = None
     try:
-        # Try to open a database connection and immediately close it
         conn = get_db_connection()
-        conn.close()
+        release_db_connection(conn)
+        conn = None
         return jsonify({'status': 'ok', 'database': 'connected'}), 200
     except Exception as e:
         log.error(f"Health check failed — cannot reach database: {e}")
+        if conn:
+            release_db_connection(conn)
         return jsonify({'status': 'error', 'database': str(e)}), 500
 
 
@@ -691,7 +873,7 @@ def status():
         conn = get_db_connection()
 
         # RealDictCursor returns each row as a dict {column_name: value}
-        # instead of the default tuple (value, value, ...) — easier to read
+        # instead of the default tuple (value, value, ...) — easier to serialise
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
             SELECT event_id, event_type, received_at, is_live_mode, routed_to_silver
@@ -702,7 +884,7 @@ def status():
         rows = cur.fetchall()
         cur.close()
 
-        # jsonify() cannot serialize Python datetime objects — convert each to a string.
+        # jsonify() cannot serialise Python datetime objects — convert each to a string.
         # .isoformat() produces a standard format like "2024-03-08T05:30:00+05:30"
         events = []
         for row in rows:
@@ -720,9 +902,50 @@ def status():
         log.error(f"Status endpoint failed: {e}")
         return jsonify({'error': str(e)}), 500
     finally:
-        # Always close the connection — whether the query succeeded or failed
         if conn:
-            conn.close()
+            release_db_connection(conn)
+
+
+# =============================================================================
+# FLASK ROUTE: GET /failed
+# Shows the last 10 entries in bronze.failed_events, newest first.
+# Use this to inspect any request that arrived at /webhook but could not be
+# parsed as JSON, had missing required fields, or caused a Bronze insert error.
+# =============================================================================
+@app.route('/failed', methods=['GET'])
+def failed():
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT id, received_at, failure_reason, content_type,
+                   LEFT(raw_body, 500) AS raw_body_preview
+            FROM   bronze.failed_events
+            ORDER  BY received_at DESC
+            LIMIT  10
+        """)
+        rows = cur.fetchall()
+        cur.close()
+
+        events = []
+        for row in rows:
+            events.append({
+                'id':               row['id'],
+                'received_at':      row['received_at'].isoformat() if row['received_at'] else None,
+                'failure_reason':   row['failure_reason'],
+                'content_type':     row['content_type'],
+                'raw_body_preview': row['raw_body_preview'],
+            })
+
+        return jsonify({'count': len(events), 'last_10_failed': events}), 200
+
+    except Exception as e:
+        log.error(f"Failed endpoint error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            release_db_connection(conn)
 
 
 # =============================================================================
@@ -730,13 +953,16 @@ def status():
 # The main endpoint. Edmingle sends all events here as HTTP POST requests.
 #
 # FLOW:
-#   1. Parse the JSON body from the incoming request.
-#   2. Write the raw payload to Bronze (always — this is our safety net).
+#   1. Capture the raw request body and mask PII before logging.
+#   2. Parse the JSON body. If parsing fails, write to bronze.failed_events.
+#   3. Detect the payload structure (real Edmingle nested vs. test flat) and
+#      extract event_id, event_type, is_live_mode, data, event_timestamp.
+#   4. Write the raw payload to Bronze (always — this is our safety net).
 #      Bronze uses its own connection and commits immediately.
-#   3. Look up the event_type in EVENT_ROUTER to find the right Silver function.
-#   4. Call that Silver function to write structured data to the Silver table.
-#   5. Mark the Bronze row as routed_to_silver = true (same transaction as step 4).
-#   6. Return HTTP 200 to Edmingle — always, no matter what happened internally.
+#   5. Look up the event_type in EVENT_ROUTER to find the right Silver function.
+#   6. Call that Silver function to write structured data to the Silver table.
+#   7. Mark the Bronze row as routed_to_silver = true (same transaction as step 6).
+#   8. Return HTTP 200 to Edmingle — always, no matter what happened internally.
 #
 # CRITICAL RULE: Edmingle marks our webhook Inactive permanently if it receives
 # anything other than HTTP 200. We must return 200 even if our database is down,
@@ -746,56 +972,64 @@ def status():
 def webhook():
 
     # -------------------------------------------------------------------------
-    # STEP 1: Capture and parse the raw request body.
+    # STEP 1: Capture the raw request body.
+    # We capture this FIRST before any parsing. If parsing fails, we still have
+    # the raw body to write to bronze.failed_events for investigation.
     #
-    # We log the raw body FIRST before any processing. This means even if our
-    # parsing logic fails, we have a record of exactly what Edmingle sent us.
-    # This is critical for debugging payload structure differences.
-    #
-    # force=True tells Flask to parse the body as JSON regardless of the
-    # Content-Type header. Without this, get_json() returns None whenever
-    # Edmingle sends events without 'Content-Type: application/json', which
-    # causes silent data loss — we return 200 but store nothing.
+    # PII is masked before the body is logged so that student email addresses
+    # and phone numbers are never written to the log file in plain text.
     # -------------------------------------------------------------------------
-    raw_body = request.get_data(as_text=True)
-    log.info(f"Raw request received — Content-Type: {request.content_type} — Body: {raw_body[:300]}")
+    raw_body     = request.get_data(as_text=True)
+    content_type = request.content_type
+    log.info(f"Raw request — Content-Type: {content_type} — Body: {mask_pii(raw_body[:300])}")
 
+    # force=True parses the body as JSON regardless of the Content-Type header.
+    # Without this, get_json() returns None whenever Edmingle sends events
+    # without 'Content-Type: application/json', causing silent data loss.
     payload = request.get_json(silent=True, force=True)
 
     if payload is None:
-        log.warning(f"Could not parse body as JSON — returning 200. Body was: {raw_body[:300]}")
+        reason = 'JSON parse failed'
+        log.warning(f"{reason} — body was: {mask_pii(raw_body[:300])}")
+        insert_failed_event(reason, raw_body, content_type)
         return jsonify({'status': 'received'}), 200
 
     # -------------------------------------------------------------------------
-    # Detect which payload structure Edmingle sent.
+    # STEP 2: Detect which payload structure Edmingle sent and normalise it.
     #
-    # Normal events use top-level fields:
-    #   { "id": "...", "event_name": "user.user_created", "data": {...} }
+    # Real Edmingle events use a nested structure:
+    #   {
+    #     "event":   { "event_name": "user.user_created",
+    #                  "livemode":   true,
+    #                  "event_ts":   "2026-04-28T08:05:20+00:00" },
+    #     "payload": { "user_id": 123, "email": "...", ... }
+    #   }
     #
-    # The url.validate ping uses a different structure — everything is nested
-    # inside an 'event' key and the field names are different:
-    #   { "event": { "event_name": "url.validate", "livemode": false,
-    #                "event_ts": "2026-04-28T08:05:20+00:00" } }
+    # Test events from test_all_events.py use a flat structure:
+    #   { "id": "...", "event_name": "...", "event_timestamp": 1234, "data": {...} }
     #
     # We normalise both into the same local variables so the rest of the
     # function does not need to know which structure arrived.
     # -------------------------------------------------------------------------
     if 'event' in payload and 'id' not in payload:
-        # Nested structure — url.validate ping from Edmingle
-        event_block     = payload['event']
-        event_type      = event_block.get('event_name')
-        event_ts_str    = event_block.get('event_ts', '')
-        # This format has no 'id' field. Build a deterministic event_id from
-        # the event_ts string so Bronze can store it with a valid unique key.
+        # Nested structure — real Edmingle events.
+        event_obj    = payload.get('event', {})
+        # Some Edmingle versions use the key 'event' inside event_obj instead of 'event_name'
+        event_type   = event_obj.get('event') or event_obj.get('event_name')
+        event_ts_str = event_obj.get('event_ts', '')
+        # Build a deterministic event_id from the ISO timestamp string.
+        # Real Edmingle events have no top-level 'id' field.
         event_id        = f"{event_type}-{event_ts_str}" if event_ts_str else event_type
-        is_live_mode    = event_block.get('livemode', True)
-        event_timestamp = None  # event_ts is an ISO string, not a Unix integer
-        # Extract data from inside the event block if it exists.
-        # Previously this was hardcoded to {} which would silently discard all
-        # student/session/transaction data for any event using the nested structure.
-        data            = event_block.get('data', {})
+        is_live_mode    = event_obj.get('livemode', True)
+        event_timestamp = None   # event_ts is an ISO string, not a Unix integer
+
+        # CRITICAL: the actual data payload is at the TOP-LEVEL 'payload' key,
+        # NOT inside the 'event' block. Using event_obj.get('data') would return {}
+        # for every real event, producing NULL in every Silver column.
+        data = payload.get('payload', {})
+
     else:
-        # Normal structure — used by all real Edmingle event types
+        # Flat structure — used by test_all_events.py.
         event_id        = payload.get('id')
         event_type      = payload.get('event_name')
         event_timestamp = payload.get('event_timestamp')
@@ -803,14 +1037,15 @@ def webhook():
         data            = payload.get('data', {})
 
     if not event_id or not event_type:
-        # Edmingle always sends these — log if they are missing and move on
-        log.warning(f"Event missing 'id' or 'event_name'. Raw payload: {payload}")
+        reason = f"Missing event_id or event_type — keys present: {list(payload.keys())}"
+        log.warning(reason)
+        insert_failed_event(reason, raw_body, content_type)
         return jsonify({'status': 'received'}), 200
 
     log.info(f"Received: {event_type}  [event_id: {event_id}]")
 
     # -------------------------------------------------------------------------
-    # STEP 2: Write to Bronze (our permanent safety net)
+    # STEP 3: Write to Bronze (our permanent safety net).
     # This uses its own connection and commits immediately.
     # Bronze is completely independent of Silver — a Silver failure cannot
     # affect or undo the Bronze record.
@@ -819,18 +1054,16 @@ def webhook():
     try:
         conn_bronze = get_db_connection()
         insert_bronze(conn_bronze, event_id, event_type, payload, is_live_mode)
-        # commit() saves the INSERT permanently — it cannot be undone after this point
         conn_bronze.commit()
         log.info(f"Bronze stored: {event_type}  [event_id: {event_id}]")
     except Exception as e:
-        # rollback() cancels any partial changes in this transaction
         if conn_bronze:
             conn_bronze.rollback()
         log.error(f"Bronze insert failed for {event_type} [event_id: {event_id}]: {e}")
+        insert_failed_event(f"Bronze insert failed: {e}", raw_body, content_type)
     finally:
-        # Always close the connection — whether we succeeded or failed
         if conn_bronze:
-            conn_bronze.close()
+            release_db_connection(conn_bronze)
 
     # -------------------------------------------------------------------------
     # url.validate is Edmingle's infrastructure health check — not a real event.
@@ -843,7 +1076,7 @@ def webhook():
         return jsonify({'status': 'received'}), 200
 
     # -------------------------------------------------------------------------
-    # STEPS 3, 4, 5: Route to Silver + mark Bronze as routed
+    # STEPS 4, 5, 6: Route to Silver + mark Bronze as routed.
     # Silver uses a separate connection from Bronze.
     # The Silver insert and the mark_routed_to_silver update share one transaction.
     # If Silver fails, both roll back together — the Bronze flag stays false,
@@ -853,24 +1086,16 @@ def webhook():
     try:
         conn_silver = get_db_connection()
 
-        # Look up which routing function handles this event type
         router_fn = EVENT_ROUTER.get(event_type)
 
         if router_fn:
-            # STEP 3+4: Call the Silver routing function for this event type
             router_fn(conn_silver, event_id, event_type, data, event_timestamp)
-
-            # STEP 5: Mark this event as successfully routed in Bronze
-            # This is in the same transaction as the Silver insert above
             mark_routed_to_silver(conn_silver, event_id)
-
-            # Save both the Silver insert and the Bronze flag update together
             conn_silver.commit()
             log.info(f"Silver routed: {event_type}  [event_id: {event_id}]")
-
         else:
-            # event_type is not in our router — unknown event from Edmingle
-            # It is already stored safely in Bronze. Log a warning, do not fail.
+            # event_type is not in our router — unknown event from Edmingle.
+            # Already stored safely in Bronze. Log a warning, do not fail.
             log.warning(f"Unknown event type '{event_type}' — stored in Bronze only")
 
     except Exception as e:
@@ -879,12 +1104,12 @@ def webhook():
         log.error(f"Silver routing failed for {event_type} [event_id: {event_id}]: {e}")
     finally:
         if conn_silver:
-            conn_silver.close()
+            release_db_connection(conn_silver)
 
     # -------------------------------------------------------------------------
-    # STEP 6: Always return HTTP 200 to Edmingle
+    # STEP 7: Always return HTTP 200 to Edmingle.
     # This line runs regardless of what happened above.
-    # If Edmingle gets any other response code, it retries and eventually
+    # If Edmingle receives any other response code, it retries and eventually
     # marks our webhook Inactive permanently — we never let that happen.
     # -------------------------------------------------------------------------
     return jsonify({'status': 'received'}), 200
@@ -898,8 +1123,8 @@ def webhook():
 # host='0.0.0.0' means the server listens on all network interfaces,
 # not just localhost. This is needed when Edmingle sends webhooks from the internet.
 #
-# debug=True means Flask restarts automatically when you edit this file,
-# and prints full error tracebacks in the terminal. Disable this in production.
+# debug=True restarts Flask automatically when you edit this file and prints
+# full error tracebacks in the terminal. Disable this in production.
 # =============================================================================
 if __name__ == '__main__':
     log.info("Starting Edmingle webhook receiver on port 5000...")
