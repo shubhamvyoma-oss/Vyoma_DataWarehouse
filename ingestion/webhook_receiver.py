@@ -38,6 +38,7 @@
 # psycopg2.pool     : ThreadedConnectionPool — reuse connections across requests
 # =============================================================================
 import atexit
+import datetime
 import logging
 import logging.handlers
 import os
@@ -132,7 +133,7 @@ def _init_pool():
     global _pool
     _pool = psycopg2.pool.ThreadedConnectionPool(
         minconn=2,
-        maxconn=10,
+        maxconn=20,
         host=DB_HOST,
         port=DB_PORT,
         dbname=DB_NAME,
@@ -143,14 +144,22 @@ def _init_pool():
 
 
 def get_db_connection():
-    conn = _pool.getconn()
-    # Set a 5-second timeout on every query for this connection.
-    # Prevents a slow or stalled database query from blocking a worker thread.
-    cur = conn.cursor()
-    cur.execute("SET statement_timeout = '5s'")
-    cur.close()
-    conn.commit()
-    return conn
+    # Retry up to 5 times with short back-off when the pool is exhausted under
+    # burst traffic. Each attempt waits a little longer before retrying.
+    import time as _time
+    last_exc = None
+    for attempt in range(5):
+        try:
+            conn = _pool.getconn()
+            cur = conn.cursor()
+            cur.execute("SET statement_timeout = '5s'")
+            cur.close()
+            conn.commit()
+            return conn
+        except psycopg2.pool.PoolError as exc:
+            last_exc = exc
+            _time.sleep(0.05 * (attempt + 1))   # 50 ms, 100 ms, 150 ms, 200 ms, 250 ms
+    raise last_exc
 
 
 def release_db_connection(conn):
@@ -301,7 +310,7 @@ def route_user_created(conn, event_id, event_type, data, event_timestamp):
     # This is important because Edmingle may not always send every field.
     user_id        = data.get('user_id')
     email          = data.get('email')
-    full_name      = data.get('full_name')
+    full_name      = data.get('name') or data.get('full_name')
     user_name      = data.get('user_name')
     user_role      = data.get('user_role')
     contact_number = data.get('contact_number')
@@ -481,13 +490,15 @@ def route_transaction(conn, event_id, event_type, data, event_timestamp):
     #   transaction.user_purchase_completed  — payment succeeded, CONFIRMED enrollment
     #   transaction.user_purchase_failed     — payment failed, NOT an enrollment
     #
-    # Fields that do not apply to a given event type will be None (SQL NULL) in that row.
-    # UPSERT on event_id — one row per event.
+    # UPSERT key: (user_id, bundle_id, master_batch_id) — one row per enrollment.
+    # Multiple events for the same enrollment (e.g., initiated → completed) update
+    # the same row, with COALESCE preserving non-null values from earlier events.
     cur = conn.cursor()
 
     user_id               = data.get('user_id')
     email                 = data.get('email')
-    full_name             = data.get('full_name')
+    full_name             = data.get('name') or data.get('full_name')
+    contact_number        = data.get('contact_number')
     bundle_id             = data.get('bundle_id')
     course_name           = data.get('course_name')
     institution_bundle_id = data.get('institution_bundle_id')
@@ -498,73 +509,59 @@ def route_transaction(conn, event_id, event_type, data, event_timestamp):
     final_price           = data.get('final_price')
     currency              = data.get('currency')
     credits_applied       = data.get('credits_applied')
-
-    # Only present in purchase_completed — None (SQL NULL) for all other event types
-    payment_method    = data.get('payment_method')
-    transaction_id    = data.get('transaction_id')
-    enrollment_status = data.get('enrollment_status')
-
-    # Only present in purchase_failed — None for all other event types
-    failure_reason = data.get('failure_reason')
-    error_code     = data.get('error_code')
-
-    # Present in initiated and completed — None in failed
-    start_date_unix = data.get('start_date')
-    end_date_unix   = data.get('end_date')
+    payment_method        = data.get('payment_method')
+    transaction_id        = data.get('transaction_id')
+    start_date_unix       = data.get('start_date')
+    end_date_unix         = data.get('end_date')
+    created_at_unix       = data.get('created_at')
 
     # unix_to_ist(NULL) returns NULL in PostgreSQL — safe to pass None here
     cur.execute("""
         INSERT INTO silver.transactions (
-            event_id, event_type,
-            user_id, email, full_name,
+            event_id, event_type, event_timestamp_ist,
+            user_id, email, full_name, contact_number,
             bundle_id, course_name, institution_bundle_id, master_batch_id, master_batch_name,
             original_price, discount, final_price, currency, credits_applied,
-            payment_method, transaction_id, enrollment_status,
-            failure_reason, error_code,
-            start_date_ist, end_date_ist, event_timestamp_ist,
-            received_at
+            payment_method, transaction_id,
+            start_date_ist, end_date_ist, created_at_ist,
+            source
         ) VALUES (
-            %s, %s,
-            %s, %s, %s,
+            %s, %s, unix_to_ist(%s),
+            %s, %s, %s, %s,
             %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s,
-            %s, %s, %s,
             %s, %s,
             unix_to_ist(%s), unix_to_ist(%s), unix_to_ist(%s),
-            NOW() AT TIME ZONE 'Asia/Kolkata'
+            'webhook'
         )
-        ON CONFLICT (event_id) DO UPDATE SET
+        ON CONFLICT (user_id, bundle_id, master_batch_id) DO UPDATE SET
+            event_id              = EXCLUDED.event_id,
             event_type            = EXCLUDED.event_type,
-            user_id               = EXCLUDED.user_id,
-            email                 = EXCLUDED.email,
-            full_name             = EXCLUDED.full_name,
-            bundle_id             = EXCLUDED.bundle_id,
-            course_name           = EXCLUDED.course_name,
-            institution_bundle_id = EXCLUDED.institution_bundle_id,
-            master_batch_id       = EXCLUDED.master_batch_id,
-            master_batch_name     = EXCLUDED.master_batch_name,
-            original_price        = EXCLUDED.original_price,
-            discount              = EXCLUDED.discount,
-            final_price           = EXCLUDED.final_price,
-            currency              = EXCLUDED.currency,
-            credits_applied       = EXCLUDED.credits_applied,
-            payment_method        = EXCLUDED.payment_method,
-            transaction_id        = EXCLUDED.transaction_id,
-            enrollment_status     = EXCLUDED.enrollment_status,
-            failure_reason        = EXCLUDED.failure_reason,
-            error_code            = EXCLUDED.error_code,
-            start_date_ist        = EXCLUDED.start_date_ist,
-            end_date_ist          = EXCLUDED.end_date_ist,
             event_timestamp_ist   = EXCLUDED.event_timestamp_ist,
-            received_at           = EXCLUDED.received_at
+            email                 = COALESCE(EXCLUDED.email,                 silver.transactions.email),
+            full_name             = COALESCE(EXCLUDED.full_name,             silver.transactions.full_name),
+            contact_number        = COALESCE(EXCLUDED.contact_number,        silver.transactions.contact_number),
+            course_name           = COALESCE(EXCLUDED.course_name,           silver.transactions.course_name),
+            master_batch_name     = COALESCE(EXCLUDED.master_batch_name,     silver.transactions.master_batch_name),
+            institution_bundle_id = COALESCE(EXCLUDED.institution_bundle_id, silver.transactions.institution_bundle_id),
+            original_price        = COALESCE(EXCLUDED.original_price,        silver.transactions.original_price),
+            discount              = COALESCE(EXCLUDED.discount,              silver.transactions.discount),
+            final_price           = COALESCE(EXCLUDED.final_price,           silver.transactions.final_price),
+            currency              = COALESCE(EXCLUDED.currency,              silver.transactions.currency),
+            credits_applied       = COALESCE(EXCLUDED.credits_applied,       silver.transactions.credits_applied),
+            payment_method        = COALESCE(EXCLUDED.payment_method,        silver.transactions.payment_method),
+            transaction_id        = COALESCE(EXCLUDED.transaction_id,        silver.transactions.transaction_id),
+            start_date_ist        = COALESCE(EXCLUDED.start_date_ist,        silver.transactions.start_date_ist),
+            end_date_ist          = COALESCE(EXCLUDED.end_date_ist,          silver.transactions.end_date_ist),
+            created_at_ist        = COALESCE(EXCLUDED.created_at_ist,        silver.transactions.created_at_ist),
+            source                = 'webhook'
     """, (
-        event_id, event_type,
-        user_id, email, full_name,
+        event_id, event_type, event_timestamp,
+        user_id, email, full_name, contact_number,
         bundle_id, course_name, institution_bundle_id, master_batch_id, master_batch_name,
         original_price, discount, final_price, currency, credits_applied,
-        payment_method, transaction_id, enrollment_status,
-        failure_reason, error_code,
-        start_date_unix, end_date_unix, event_timestamp
+        payment_method, transaction_id,
+        start_date_unix, end_date_unix, created_at_unix
     ))
     cur.close()
 
@@ -590,8 +587,9 @@ def route_session(conn, event_id, event_type, data, event_timestamp):
     gmt_start_time = data.get('gmt_start_time')
     gmt_end_time   = data.get('gmt_end_time')
 
-    # Actual start time — only in session_started, None otherwise
-    actual_start_time = data.get('actual_start_time')
+    # Actual start time — only in session_started/session_start events.
+    # Real Edmingle events use 'taken_at'; test events use 'actual_start_time'.
+    actual_start_time = data.get('actual_start_time') or data.get('taken_at')
 
     duration_minutes = data.get('duration_minutes')
 
@@ -712,7 +710,8 @@ def route_assessment(conn, event_id, event_type, data, event_timestamp):
     mark              = data.get('mark')
     is_evaluated      = data.get('is_evaluated')
     faculty_comments  = data.get('faculty_comments')  # None until evaluated
-    submitted_at_unix = data.get('submitted_at')
+    # Real Edmingle events use 'test_date'; test events use 'submitted_at'.
+    submitted_at_unix = data.get('submitted_at') or data.get('test_date')
 
     cur.execute("""
         INSERT INTO silver.assessments (
@@ -751,7 +750,9 @@ def route_course(conn, event_id, event_type, data, event_timestamp):
 
     user_id           = data.get('user_id')
     bundle_id         = data.get('bundle_id')
-    completed_at_unix = data.get('completed_at')
+    # Real Edmingle payloads have no 'completed_at' field — fall back to event_timestamp,
+    # which is parsed from the top-level event_ts ISO string for real events.
+    completed_at_unix = data.get('completed_at') or event_timestamp
 
     cur.execute("""
         INSERT INTO silver.courses (
@@ -1081,7 +1082,12 @@ def webhook():
         # Real Edmingle events have no top-level 'id' field.
         event_id        = f"{event_type}-{event_ts_str}" if event_ts_str else event_type
         is_live_mode    = event_obj.get('livemode', True)
-        event_timestamp = None   # event_ts is an ISO string, not a Unix integer
+        # Parse the ISO timestamp string to a Unix integer so routing functions
+        # can use it as a fallback when the payload carries no explicit timestamp field.
+        try:
+            event_timestamp = int(datetime.datetime.fromisoformat(event_ts_str).timestamp())
+        except (ValueError, TypeError):
+            event_timestamp = None
 
         # CRITICAL: the actual data payload is at the TOP-LEVEL 'payload' key,
         # NOT inside the 'event' block. Using event_obj.get('data') would return {}

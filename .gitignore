@@ -16,3 +16,10 @@ ingestion/server_startup.log
 venv/
 .venv/
 env/
+
+# CSV data exports — contain student PII, never commit
+*.csv
+CSV files/
+
+# Log files (catch-all in addition to specific paths above)
+*.log

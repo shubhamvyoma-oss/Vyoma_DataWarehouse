@@ -559,3 +559,179 @@ CREATE TABLE IF NOT EXISTS silver.certificates (
     -- One row per event — upsert on event_id
     UNIQUE (event_id)
 );
+
+
+-- =============================================================================
+-- MIGRATION 2026-04-29: CSV backfill tables + redesigned silver.transactions
+-- =============================================================================
+
+
+-- ---------------------------------------------------------------------------
+-- BRONZE LAYER — TABLE 3: bronze.studentexport_raw
+-- Raw copy of studentexport.csv (one row per student profile export).
+-- skiprows=1 skips the decorative title row above the header.
+-- All columns stored as TEXT — no transformation, no type casting.
+-- source_row is the 0-based pandas index (row 0 = first data row).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS bronze.studentexport_raw (
+    id                                 SERIAL PRIMARY KEY,
+    source_row                         INTEGER NOT NULL,
+    row_number                         TEXT,
+    name                               TEXT,
+    email                              TEXT,
+    registration_number                TEXT,
+    contact_number_dial_code           TEXT,
+    contact_number                     TEXT,
+    alternate_contact_number_dial_code TEXT,
+    alternate_contact_number           TEXT,
+    date_of_birth                      TEXT,
+    parent_name                        TEXT,
+    parent_contact                     TEXT,
+    parent_email                       TEXT,
+    address                            TEXT,
+    city                               TEXT,
+    state                              TEXT,
+    standard                           TEXT,
+    date_created                       TEXT,
+    username                           TEXT,
+    gender                             TEXT,
+    status                             TEXT,
+    username_1                         TEXT,
+    why_study_sanskrit                 TEXT,
+    user_nice_name                     TEXT,
+    user_last_name                     TEXT,
+    would_like_to_teach                TEXT,
+    teaching_experience                TEXT,
+    is_mainstream_education            TEXT,
+    objective                          TEXT,
+    user_age                           TEXT,
+    persona                            TEXT,
+    objective_package                  TEXT,
+    time_per_week_hours                TEXT,
+    age_                               TEXT,
+    facebook_profile_url               TEXT,
+    instagram_profile_url              TEXT,
+    pinterest_profile_url              TEXT,
+    soundcloud_profile_url             TEXT,
+    tumblr_profile_url                 TEXT,
+    youtube_profile_url                TEXT,
+    wikipedia_url                      TEXT,
+    twitter_username                   TEXT,
+    gst_number                         TEXT,
+    myspace_profile_url                TEXT,
+    international_phone_number         TEXT,
+    website                            TEXT,
+    educational_qualification          TEXT,
+    linkedin_profile_url               TEXT,
+    age_v2                             TEXT,
+    gender_                            TEXT,
+    sanskrit_qualification             TEXT,
+    areas_of_interest                  TEXT,
+    studying_sanskrit_currently        TEXT,
+    current_education_status           TEXT,
+    country_name                       TEXT,
+    loaded_at                          TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (source_row)
+);
+
+
+-- ---------------------------------------------------------------------------
+-- BRONZE LAYER — TABLE 4: bronze.student_courses_enrolled_raw
+-- Raw copy of studentCoursesEnrolled.csv (one row per student-course enrollment).
+-- Column names match the CSV headers exactly (already snake_case).
+-- All values stored as TEXT. Timestamps (start_date, etc.) are Unix integers
+-- stored as strings — cast to BIGINT when transforming to Silver.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS bronze.student_courses_enrolled_raw (
+    id                    SERIAL PRIMARY KEY,
+    source_row            INTEGER NOT NULL,
+    user_id               TEXT,
+    name                  TEXT,
+    email                 TEXT,
+    class_id              TEXT,
+    class_name            TEXT,
+    tutor_name            TEXT,
+    total_classes         TEXT,
+    present               TEXT,
+    absent                TEXT,
+    late                  TEXT,
+    excused               TEXT,
+    start_date            TEXT,
+    end_date              TEXT,
+    master_batch_id       TEXT,
+    master_batch_name     TEXT,
+    classusers_start_date TEXT,
+    classusers_end_date   TEXT,
+    batch_status          TEXT,
+    cu_status             TEXT,
+    cu_state              TEXT,
+    institution_bundle_id TEXT,
+    archived_at           TEXT,
+    bundle_id             TEXT,
+    loaded_at             TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (source_row)
+);
+
+
+-- ---------------------------------------------------------------------------
+-- BRONZE LAYER — TABLE 5: bronze.unresolved_students_raw
+-- Rows from studentexport.csv that could not be resolved to a user_id.
+-- A student is unresolvable if their email is absent or does not appear
+-- in bronze.student_courses_enrolled_raw (no known enrollment record).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS bronze.unresolved_students_raw (
+    id          SERIAL PRIMARY KEY,
+    source_row  INTEGER NOT NULL,
+    email       TEXT,
+    raw_row     JSONB,
+    inserted_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =============================================================================
+-- SILVER LAYER — TABLE 2 (REDESIGNED): silver.transactions
+--
+-- Schema redesigned on 2026-04-29 for CSV + webhook unified storage:
+--   UPSERT key changed to (user_id, bundle_id, master_batch_id) — one row
+--   per student-course-batch enrollment, regardless of whether it arrived
+--   via a live webhook or a CSV historical backfill.
+--
+--   Added:   contact_number, course_name, created_at_ist, source, inserted_at
+--   Removed: failure_reason, error_code, enrollment_status, received_at
+--
+-- source = 'webhook' for live events; source = 'csv' for backfilled rows.
+--
+-- WARNING: DROP TABLE destroys existing rows. Export data first if needed.
+--   After running, execute:  python ingestion/reprocess_bronze.py
+--   to repopulate Silver from all Bronze webhook events.
+-- =============================================================================
+DROP TABLE IF EXISTS silver.transactions;
+
+CREATE TABLE silver.transactions (
+    id                    SERIAL PRIMARY KEY,
+    event_id              TEXT NOT NULL,
+    event_type            TEXT NOT NULL,
+    event_timestamp_ist   TIMESTAMPTZ,
+    user_id               BIGINT NOT NULL,
+    email                 TEXT,
+    full_name             TEXT,
+    contact_number        TEXT,
+    bundle_id             BIGINT,
+    course_name           TEXT,
+    master_batch_id       BIGINT,
+    master_batch_name     TEXT,
+    institution_bundle_id BIGINT,
+    original_price        NUMERIC(12,2),
+    discount              NUMERIC(12,2),
+    final_price           NUMERIC(12,2),
+    currency              TEXT,
+    credits_applied       NUMERIC(12,2),
+    payment_method        TEXT,
+    transaction_id        TEXT,
+    start_date_ist        TIMESTAMPTZ,
+    end_date_ist          TIMESTAMPTZ,
+    created_at_ist        TIMESTAMPTZ,
+    source                TEXT DEFAULT 'webhook',
+    inserted_at           TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (user_id, bundle_id, master_batch_id)
+);
