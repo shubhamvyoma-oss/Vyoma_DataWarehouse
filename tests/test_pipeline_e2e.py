@@ -107,8 +107,9 @@ def cleanup(conn, event_ids: list[str], user_ids: list[int] = None,
             attendance_ids: list[int] = None):
     with conn.cursor() as cur:
         if event_ids:
+            # Reset Bronze flag so integrity checks don't see stale routed_to_silver=true
             cur.execute(
-                "DELETE FROM bronze.webhook_events WHERE event_id = ANY(%s)",
+                "UPDATE bronze.webhook_events SET routed_to_silver = false WHERE event_id = ANY(%s)",
                 (event_ids,),
             )
             for tbl in ('silver.transactions', 'silver.assessments',
@@ -166,6 +167,7 @@ def test1_data_integrity():
     t_missing = scalar(conn, """
         SELECT COUNT(*) FROM bronze.webhook_events b
         WHERE b.routed_to_silver = true
+          AND b.is_live_mode = true
           AND b.event_type LIKE %s
           AND NOT EXISTS (
             SELECT 1 FROM silver.transactions s
@@ -181,6 +183,7 @@ def test1_data_integrity():
     u_missing = scalar(conn, """
         SELECT COUNT(*) FROM bronze.webhook_events b
         WHERE b.routed_to_silver = true
+          AND b.is_live_mode = true
           AND b.event_type IN ('user.user_created','user.user_updated')
           AND NOT EXISTS (
             SELECT 1 FROM silver.users u

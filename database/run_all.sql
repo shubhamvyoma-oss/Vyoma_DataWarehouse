@@ -26,5 +26,6 @@
 \i database/silver/08_course_metadata.sql
 \i database/silver/09_course_lifecycle.sql
 \i database/silver/10_course_batches.sql
+\i database/silver/11_course_master.sql
 
 \i database/gold/01_gold_views.sql
