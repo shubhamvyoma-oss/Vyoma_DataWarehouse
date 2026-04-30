@@ -18,3 +18,13 @@
 \i database/silver/05_courses.sql
 \i database/silver/06_announcements.sql
 \i database/silver/07_certificates.sql
+
+\i database/bronze/06_course_catalogue_raw.sql
+\i database/bronze/07_course_lifecycle_raw.sql
+\i database/bronze/08_course_batches_raw.sql
+
+\i database/silver/08_course_metadata.sql
+\i database/silver/09_course_lifecycle.sql
+\i database/silver/10_course_batches.sql
+
+\i database/gold/01_gold_views.sql
