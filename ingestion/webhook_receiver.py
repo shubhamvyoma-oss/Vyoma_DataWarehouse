@@ -1,10 +1,13 @@
 import atexit
 import datetime
+import json as _json
 import logging
 import logging.handlers
+import os
 import re
 import signal
 import sys
+import threading
 
 import psycopg2
 import psycopg2.extras
@@ -54,6 +57,28 @@ def mask_pii(text: str) -> str:
     text = _EMAIL_RE.sub('[email]', text)
     text = _PHONE_RE.sub('[phone]', text)
     return text
+
+
+# ── DISK FALLBACK ─────────────────────────────────────────────────────────────
+# When both Bronze and failed_events inserts fail (DB fully down), events are
+# written here so they can be recovered via POST /retry-failed after DB comes back.
+FALLBACK_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fallback_queue.jsonl')
+_fallback_lock = threading.Lock()
+
+
+def _write_fallback(failure_reason, raw_body, content_type):
+    try:
+        entry = _json.dumps({
+            'failure_reason': failure_reason,
+            'raw_body':       raw_body,
+            'content_type':   content_type,
+        })
+        with _fallback_lock:
+            with open(FALLBACK_FILE, 'a', encoding='utf-8') as f:
+                f.write(entry + '\n')
+        log.warning(f"DB unreachable — event written to disk fallback ({FALLBACK_FILE})")
+    except Exception as e:
+        log.error(f"Disk fallback write also failed: {e}")
 
 
 # ── FLASK APP ─────────────────────────────────────────────────────────────────
@@ -167,6 +192,7 @@ def insert_failed_event(failure_reason, raw_body, content_type):
         log.error(f"Could not write to bronze.failed_events: {e}")
         if conn:
             conn.rollback()
+        _write_fallback(failure_reason, raw_body, content_type)
     finally:
         if conn:
             release_db_connection(conn)
@@ -732,6 +758,80 @@ def failed():
     finally:
         if conn:
             release_db_connection(conn)
+
+
+# ── FLASK ROUTE: POST /retry-failed ──────────────────────────────────────────
+# Processes events from the disk fallback file written during DB outage.
+@app.route('/retry-failed', methods=['POST'])
+def retry_failed():
+    if not os.path.exists(FALLBACK_FILE):
+        return jsonify({'retried': 0, 'remaining': 0}), 200
+
+    with _fallback_lock:
+        try:
+            with open(FALLBACK_FILE, 'r', encoding='utf-8') as f:
+                lines = [l.strip() for l in f if l.strip()]
+        except Exception as e:
+            return jsonify({'error': str(e)}), 200
+
+    retried      = 0
+    failed_lines = []
+
+    for line in lines:
+        try:
+            entry      = _json.loads(line)
+            raw_body   = entry.get('raw_body', '')
+            payload    = _json.loads(raw_body) if raw_body else None
+            if not payload:
+                failed_lines.append(line)
+                continue
+
+            if 'event' in payload and 'id' not in payload:
+                event_obj    = payload.get('event', {})
+                event_type   = event_obj.get('event') or event_obj.get('event_name')
+                event_ts_str = event_obj.get('event_ts', '')
+                event_id     = f"{event_type}-{event_ts_str}" if event_ts_str else event_type
+                is_live_mode = event_obj.get('livemode', True)
+            else:
+                event_id     = payload.get('id')
+                event_type   = payload.get('event_name')
+                is_live_mode = payload.get('is_live_mode', True)
+
+            if not event_id or not event_type:
+                failed_lines.append(line)
+                continue
+
+            conn = None
+            try:
+                conn = get_db_connection()
+                insert_bronze(conn, event_id, event_type, payload, is_live_mode)
+                conn.commit()
+                retried += 1
+                log.info(f"retry-failed: recovered {event_type} [{event_id}]")
+            except Exception as e:
+                failed_lines.append(line)
+                log.error(f"retry-failed: could not recover {event_id}: {e}")
+                if conn:
+                    conn.rollback()
+            finally:
+                if conn:
+                    release_db_connection(conn)
+        except Exception as e:
+            failed_lines.append(line)
+
+    with _fallback_lock:
+        if failed_lines:
+            with open(FALLBACK_FILE, 'w', encoding='utf-8') as f:
+                for ln in failed_lines:
+                    f.write(ln + '\n')
+        else:
+            try:
+                os.remove(FALLBACK_FILE)
+            except FileNotFoundError:
+                pass
+
+    log.info(f"retry-failed: retried={retried} remaining={len(failed_lines)}")
+    return jsonify({'retried': retried, 'remaining': len(failed_lines)}), 200
 
 
 # ── FLASK ROUTE: POST /webhook ────────────────────────────────────────────────

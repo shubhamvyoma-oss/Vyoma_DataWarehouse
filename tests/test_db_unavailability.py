@@ -157,8 +157,24 @@ def main():
         print(f"  DB still unreachable: {e}")
     print()
 
-    # ── PHASE 5 — Recovery check ─────────────────────────────────────
-    print("Phase 5 -- Recovery: checking what was captured during outage ...")
+    # ── PHASE C — Trigger disk-fallback recovery ─────────────────────
+    print("Phase C -- Triggering /retry-failed to recover disk-fallback events ...")
+    time.sleep(1)
+    try:
+        rc = requests.post(f"{BASE_URL}/retry-failed", timeout=30)
+        rc_data = rc.json()
+        retried   = rc_data.get('retried', 0)
+        remaining = rc_data.get('remaining', 0)
+        print(f"  /retry-failed HTTP {rc.status_code}")
+        print(f"  retried={retried}  remaining={remaining}")
+        phase_c_ok = (rc.status_code == 200)
+    except Exception as ex:
+        print(f"  /retry-failed failed: {ex}")
+        retried, remaining, phase_c_ok = 0, 0, False
+    print()
+
+    # ── PHASE 5 — Final count check ──────────────────────────────────
+    print("Phase 5 -- Verifying all 10 outage events are in Bronze ...")
     time.sleep(1)
 
     conn2 = psycopg2.connect(**CONN_ARGS)
@@ -170,29 +186,10 @@ def main():
         (phase3_ids,)
     )
     phase3_in_bronze = cur2.fetchone()[0]
-
-    cur2.execute("""
-        SELECT COUNT(*) FROM bronze.failed_events
-        WHERE  failure_reason LIKE '%%Bronze insert failed%%'
-           OR  failure_reason LIKE '%%pool%%'
-           OR  failure_reason LIKE '%%connect%%'
-           OR  failure_reason LIKE '%%ALLOW_CONNECTIONS%%'
-    """)
-    failed_in_table = cur2.fetchone()[0]
-
-    cur2.execute(
-        "SELECT failure_reason FROM bronze.failed_events ORDER BY id DESC LIMIT 5"
-    )
-    recent_failures = [row[0] for row in cur2.fetchall()]
     conn2.close()
 
     b2 = count_rows()
     print(f"  Phase-3 event IDs found in bronze.webhook_events: {phase3_in_bronze}/10")
-    print(f"  Entries in bronze.failed_events (connection errors): {failed_in_table}")
-    if recent_failures:
-        print(f"  Most recent failure reasons:")
-        for fr in recent_failures:
-            print(f"    - {str(fr)[:90]}")
     print()
     print("Final counts (delta from Phase-1 baseline):")
     for k, v in b2.items():
@@ -202,33 +199,29 @@ def main():
 
     # ── PASS / FAIL ──────────────────────────────────────────────────
     print()
-    events_captured = phase3_in_bronze + failed_in_table
+    lost  = 10 - phase3_in_bronze
     pass1 = ok_baseline
     pass2 = all_200_while_down
     pass3 = db_restored
-    pass4 = (events_captured >= 10)
+    passc = phase_c_ok
+    pass5 = (phase3_in_bronze == 10)
 
     print("Checks:")
-    print(f"  Phase 1 -- Baseline 5/5 HTTP 200:      {'PASS' if pass1 else 'FAIL'}")
-    print(f"  Phase 3 -- 10/10 HTTP 200 while down:  {'PASS' if pass2 else 'FAIL'}")
-    print(f"  Phase 4 -- DB restored successfully:   {'PASS' if pass3 else 'FAIL'}")
-    print(f"  Phase 5 -- All 10 events captured:     "
-          f"{'PASS' if pass4 else 'FAIL'}  ({events_captured}/10 in Bronze or failed_events)")
+    print(f"  Phase 1 -- Baseline 5/5 HTTP 200:           {'PASS' if pass1 else 'FAIL'}")
+    print(f"  Phase 3 -- 10/10 HTTP 200 while down:       {'PASS' if pass2 else 'FAIL'}")
+    print(f"  Phase 4 -- DB restored successfully:        {'PASS' if pass3 else 'FAIL'}")
+    print(f"  Phase C -- /retry-failed responded HTTP 200:{'PASS' if passc else 'FAIL'}")
+    print(f"  Phase 5 -- All 10 events in Bronze:         "
+          f"{'PASS' if pass5 else 'FAIL'}  ({phase3_in_bronze}/10 recovered)")
+    print(f"  Data lost: {lost} (must be zero)")
     print()
 
-    if pass1 and pass2 and pass3 and pass4:
+    if pass1 and pass2 and pass3 and passc and pass5:
         print("DB UNAVAILABILITY TEST PASS")
     else:
         print("DB UNAVAILABILITY TEST FAIL")
-        if not pass4:
-            lost = 10 - events_captured
-            print()
-            print(f"  REASON: {lost}/10 events sent during outage were silently lost.")
-            print(f"  Root cause: the Flask connection pool has no in-memory queue")
-            print(f"  or disk fallback for events that arrive when both the Bronze")
-            print(f"  insert AND the bronze.failed_events insert fail (DB fully down).")
-            print(f"  The event body IS in the application log (ingestion/webhook_receiver.log)")
-            print(f"  but there is no automated recovery path from log to database.")
+        if not pass5:
+            print(f"  REASON: {lost}/10 events sent during outage were not recovered.")
 
 
 if __name__ == '__main__':

@@ -23,3 +23,6 @@ CSV files/
 
 # Log files (catch-all in addition to specific paths above)
 *.log
+
+# Disk fallback queue — written at runtime when DB is unreachable, not source
+ingestion/fallback_queue.jsonl
