@@ -1,16 +1,21 @@
-"""
-One-shot script: reprocess all Bronze events through the current routing functions.
-Run from the project root:  python ingestion/reprocess_bronze.py
-"""
 import sys
 import os
 import datetime
-import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'), override=False)
+# ── CONFIG ──────────────────────────────────────
+DB_HOST           = "localhost"
+DB_NAME           = "edmingle_analytics"
+DB_USER           = "postgres"
+DB_PASSWORD       = "Svyoma"
+DB_PORT           = 5432
+WEBHOOK_SECRET    = "your_webhook_secret_here"
+EDMINGLE_API_KEY  = "859b19531f4b149a605679c5ea21eeb8"
+ORG_ID            = 683
+INSTITUTION_ID    = 483
+API_BASE_URL      = "https://vyoma-api.edmingle.com/nuSource/api/v1"
+# ─────────────────────────────────────────────────
 
 import psycopg2
 import psycopg2.extras
@@ -22,25 +27,22 @@ from ingestion.webhook_receiver import (
 
 _init_pool()
 
+
 def _parse_event_timestamp(payload):
-    """Reproduce the same event_timestamp logic as the webhook handler."""
     if 'event' in payload and 'id' not in payload:
-        event_obj   = payload.get('event', {})
+        event_obj    = payload.get('event', {})
         event_ts_str = event_obj.get('event_ts', '')
         try:
             return int(datetime.datetime.fromisoformat(event_ts_str).timestamp())
         except (ValueError, TypeError):
             return None
-    else:
-        return payload.get('event_timestamp')
+    return payload.get('event_timestamp')
 
 
 def _extract_data(payload):
-    """Reproduce the same data-extraction logic as the webhook handler."""
     if 'event' in payload and 'id' not in payload:
         return payload.get('payload', {})
-    else:
-        return payload.get('data', {})
+    return payload.get('data', {})
 
 
 def main():
@@ -56,14 +58,14 @@ def main():
     cur.close()
     release_db_connection(conn_read)
 
-    ok = 0
+    ok      = 0
     skipped = 0
-    errors = 0
+    errors  = 0
 
     for row in rows:
         event_id   = row['event_id']
         event_type = row['event_type']
-        payload    = row['raw_payload']  # psycopg2 deserialises JSONB to dict
+        payload    = row['raw_payload']
 
         router_fn = EVENT_ROUTER.get(event_type)
         if not router_fn:

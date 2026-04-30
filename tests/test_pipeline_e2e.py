@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-END-TO-END TEST SUITE -- Edmingle Webhook Pipeline
-Tests 1-9: data integrity, field mapping, duplicate protection, failed-event
-recovery, server resilience, IST timestamps, NULL audit, concurrency, and
-constraint-violation handling.
-
-Run from the project root:
-    python tests/test_pipeline_e2e.py
-"""
 
 import datetime
 import io
@@ -29,24 +20,31 @@ if hasattr(sys.stderr, 'reconfigure'):
 import psycopg2
 import psycopg2.extras
 import requests
-from dotenv import load_dotenv
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
+# ── CONFIG ──────────────────────────────────────
+DB_HOST           = "localhost"
+DB_NAME           = "edmingle_analytics"
+DB_USER           = "postgres"
+DB_PASSWORD       = "Svyoma"
+DB_PORT           = 5432
+WEBHOOK_SECRET    = "your_webhook_secret_here"
+EDMINGLE_API_KEY  = "859b19531f4b149a605679c5ea21eeb8"
+ORG_ID            = 683
+INSTITUTION_ID    = 483
+API_BASE_URL      = "https://vyoma-api.edmingle.com/nuSource/api/v1"
+# ─────────────────────────────────────────────────
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-load_dotenv(os.path.join(BASE_DIR, '.env'), override=False)
+BASE_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SERVER_URL  = "http://localhost:5000"
+WEBHOOK_URL = f"{SERVER_URL}/webhook"
 
 DB_DSN = dict(
-    host     = os.getenv('DB_HOST', 'localhost'),
-    port     = int(os.getenv('DB_PORT', 5432)),
-    dbname   = os.getenv('DB_NAME', 'edmingle_analytics'),
-    user     = os.getenv('DB_USER', 'postgres'),
-    password = os.getenv('DB_PASS', ''),
+    host     = DB_HOST,
+    port     = DB_PORT,
+    dbname   = DB_NAME,
+    user     = DB_USER,
+    password = DB_PASSWORD,
 )
-SERVER_URL  = f"http://localhost:{os.getenv('FLASK_PORT', 5000)}"
-WEBHOOK_URL = f"{SERVER_URL}/webhook"
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -55,12 +53,9 @@ WARN = "WARN"
 _results: dict[str, bool] = {}
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# ── HELPERS ───────────────────────────────────────────────────────────────────
 
 def db_connect():
-    """Return a psycopg2 connection with autocommit=True."""
     conn = psycopg2.connect(**DB_DSN)
     conn.autocommit = True
     return conn
@@ -84,7 +79,6 @@ def post(payload, timeout=10):
 
 
 def make_flat_event(event_name, data, event_id=None, ts=None):
-    """Build a flat-structure test event (same format as test_all_events.py)."""
     return {
         'id':              event_id or f"e2e-{uuid.uuid4().hex[:10]}",
         'event_name':      event_name,
@@ -111,7 +105,6 @@ def section(title: str):
 
 def cleanup(conn, event_ids: list[str], user_ids: list[int] = None,
             attendance_ids: list[int] = None):
-    """Remove test rows from Bronze and Silver after each test."""
     with conn.cursor() as cur:
         if event_ids:
             cur.execute(
@@ -131,15 +124,12 @@ def cleanup(conn, event_ids: list[str], user_ids: list[int] = None,
             )
 
 
-# ---------------------------------------------------------------------------
-# TEST 1 — Data integrity check
-# ---------------------------------------------------------------------------
+# ── TEST 1 — Data integrity check ─────────────────────────────────────────────
 
 def test1_data_integrity():
     section("TEST 1 — Data Integrity Check")
     conn = db_connect()
 
-    # 1a. No duplicate event_ids in Bronze
     dupes = scalar(conn, """
         SELECT COUNT(*) FROM (
             SELECT event_id FROM bronze.webhook_events
@@ -149,13 +139,10 @@ def test1_data_integrity():
     log_result("1a. No duplicate event_ids in Bronze",
                dupes == 0, f"{dupes} duplicate(s)" if dupes else "")
 
-    # 1b. bronze.failed_events count is 0
     fc = scalar(conn, "SELECT COUNT(*) FROM bronze.failed_events")
     log_result("1b. bronze.failed_events is empty",
                fc == 0, f"{fc} failed row(s)" if fc else "")
 
-    # 1c. Every routed Bronze event has a matching Silver row
-    # Tables keyed on event_id
     for prefix, silver in [
         ('assessments', 'silver.assessments'),
         ('course',      'silver.courses'),
@@ -176,7 +163,6 @@ def test1_data_integrity():
     # silver.transactions uses (user_id, bundle_id, master_batch_id) as its UPSERT key.
     # Multiple Bronze events for the same enrollment collapse into one Silver row,
     # so checking event_id would spuriously flag earlier events as "missing".
-    # Check instead that every routed transaction event has its user_id in Silver.
     t_missing = scalar(conn, """
         SELECT COUNT(*) FROM bronze.webhook_events b
         WHERE b.routed_to_silver = true
@@ -192,7 +178,6 @@ def test1_data_integrity():
     log_result("1c. silver.transactions: all routed Bronze events covered by Silver",
                t_missing == 0, f"{t_missing} orphan(s)" if t_missing else "")
 
-    # silver.users — keyed on user_id (COALESCE payload paths for real vs test events)
     u_missing = scalar(conn, """
         SELECT COUNT(*) FROM bronze.webhook_events b
         WHERE b.routed_to_silver = true
@@ -210,7 +195,6 @@ def test1_data_integrity():
     log_result("1c. silver.users: all routed Bronze events have Silver rows",
                u_missing == 0, f"{u_missing} orphan(s)" if u_missing else "")
 
-    # silver.sessions — keyed on attendance_id
     s_missing = scalar(conn, """
         SELECT COUNT(*) FROM bronze.webhook_events b
         WHERE b.routed_to_silver = true
@@ -226,7 +210,6 @@ def test1_data_integrity():
     log_result("1c. silver.sessions: all routed Bronze events have Silver rows",
                s_missing == 0, f"{s_missing} orphan(s)" if s_missing else "")
 
-    # 1d. No NULL in critical identifier columns
     id_checks = [
         ("silver.users",        "user_id"),
         ("silver.transactions", "user_id"),
@@ -246,16 +229,12 @@ def test1_data_integrity():
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# TEST 2 — Real payload field mapping verification
-# ---------------------------------------------------------------------------
+# ── TEST 2 — Real payload field mapping verification ──────────────────────────
 
 def test2_field_mapping():
     section("TEST 2 — Real Payload Field Mapping Verification")
     conn = db_connect()
 
-    # Each entry: event_type, silver_table, silver_lookup_key, payload path to lookup value,
-    # list of (payload_path[], silver_column, cast_fn)
     checks = [
         dict(
             label       = "user.user_created",
@@ -351,12 +330,10 @@ def test2_field_mapping():
             print(f"  [WARN]  {chk['label']:<46} -- no real events in Bronze, skipping")
             continue
 
-        # Use the first available event
         for bronze_row in rows:
             eid     = bronze_row['event_id']
             payload = bronze_row['raw_payload']
 
-            # Resolve the Silver row key value from the payload
             if chk['silver_key'] == 'event_id':
                 silver_rows = q(conn,
                     f"SELECT * FROM {chk['silver_tbl']} WHERE event_id = %s", (eid,))
@@ -375,14 +352,12 @@ def test2_field_mapping():
             silver = silver_rows[0]
 
             for path, col, cast in chk['mappings']:
-                # Walk path into payload
                 pval = payload
                 for k in path:
                     pval = pval.get(k) if isinstance(pval, dict) else None
 
                 sval = silver.get(col)
 
-                # Normalise for comparison
                 try:
                     pval_cast = cast(pval) if pval is not None else None
                     sval_cast = cast(sval) if sval is not None else None
@@ -393,19 +368,17 @@ def test2_field_mapping():
                 ok_flag = match
                 if not match:
                     all_pass = False
-                field_path = ".".join(path[1:])  # strip "payload"
+                field_path = ".".join(path[1:])
                 icon = "ok" if ok_flag else "MISMATCH"
                 print(f"  [{icon}]  {chk['label']:<44} {field_path:<22} {col:<20} "
                       f"pval={pval_cast!r} sval={sval_cast!r}")
-            break  # one event per type is enough
+            break
 
     log_result("2. All sampled real payload fields correctly mapped to Silver", all_pass)
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# TEST 3 — Duplicate protection
-# ---------------------------------------------------------------------------
+# ── TEST 3 — Duplicate protection ─────────────────────────────────────────────
 
 def test3_duplicate_protection():
     section("TEST 3 — Duplicate Protection")
@@ -437,15 +410,12 @@ def test3_duplicate_protection():
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# TEST 4 — Failed event recovery test
-# ---------------------------------------------------------------------------
+# ── TEST 4 — Failed event recovery test ───────────────────────────────────────
 
 def test4_failed_event_recovery():
     section("TEST 4 — Failed Event Recovery Test")
     conn = db_connect()
 
-    # Insert a fake failed event directly into the DB
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO bronze.failed_events (failure_reason, raw_body, content_type)
@@ -464,7 +434,6 @@ def test4_failed_event_recovery():
                fake_id in ids_in_resp,
                f"fake_id={fake_id}, returned ids={ids_in_resp}")
 
-    # Delete the fake row and confirm it is no longer visible in /failed
     with conn.cursor() as cur:
         cur.execute("DELETE FROM bronze.failed_events WHERE id = %s", (fake_id,))
 
@@ -476,16 +445,13 @@ def test4_failed_event_recovery():
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# TEST 5 — Server resilience test
-# ---------------------------------------------------------------------------
+# ── TEST 5 — Server resilience test ──────────────────────────────────────────
 
 def test5_server_resilience():
     section("TEST 5 — Server Resilience Test")
     conn = db_connect()
 
-    # Find the PID listening on port 5000
-    port = int(os.getenv('FLASK_PORT', 5000))
+    port = 5000
     try:
         netstat = subprocess.run(
             ['netstat', '-ano'], capture_output=True, text=True, shell=True
@@ -506,13 +472,11 @@ def test5_server_resilience():
     else:
         print(f"    Could not locate running server PID — continuing anyway")
 
-    # Start fresh server
     proc = subprocess.Popen(
         [sys.executable, os.path.join(BASE_DIR, 'ingestion', 'webhook_receiver.py')],
         cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
 
-    # Wait up to 12 s for /health to respond
     came_up = False
     for _ in range(12):
         time.sleep(1)
@@ -530,7 +494,6 @@ def test5_server_resilience():
         conn.close()
         return
 
-    # Send an event immediately after restart
     uid = 99999902
     eid = f"resilience-{uuid.uuid4().hex[:8]}"
     event = make_flat_event('user.user_created', {
@@ -553,9 +516,7 @@ def test5_server_resilience():
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# TEST 6 — IST timestamp verification
-# ---------------------------------------------------------------------------
+# ── TEST 6 — IST timestamp verification ──────────────────────────────────────
 
 def test6_ist_timestamps():
     section("TEST 6 — IST Timestamp Verification")
@@ -585,12 +546,10 @@ def test6_ist_timestamps():
                 ts_obj  = row['ts_obj']
                 samples.append(f"{tbl}.{col}: {ts_text}")
 
-                # Check 1: PostgreSQL text representation includes +05:30
                 if '+05:30' not in (ts_text or ''):
                     bad_rows.append(f"{tbl}.{col} — text={ts_text!r}")
                     continue
 
-                # Check 2: Python datetime object must be timezone-aware
                 if hasattr(ts_obj, 'tzinfo') and ts_obj.tzinfo is None:
                     bad_rows.append(f"{tbl}.{col} — timezone-naive Python datetime")
 
@@ -606,18 +565,13 @@ def test6_ist_timestamps():
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# TEST 7 — NULL audit (real events only where possible, 20 % threshold)
-# ---------------------------------------------------------------------------
+# ── TEST 7 — NULL audit ────────────────────────────────────────────────────────
 
 def test7_null_audit():
     section("TEST 7 — NULL Audit (≤20 % NULL threshold on real events)")
     conn = db_connect()
 
-    # For event_id-keyed tables we can join to Bronze and filter is_live_mode = true.
-    # For user/session tables (upserted on user_id / attendance_id) we check overall.
     checks = [
-        # (label, sql_count_nulls, sql_count_total, max_null_pct)
         ("silver.users.full_name", """
             SELECT COUNT(*) FILTER (WHERE u.full_name IS NULL),
                    COUNT(*)
@@ -708,9 +662,7 @@ def test7_null_audit():
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# TEST 8 — Concurrent load test
-# ---------------------------------------------------------------------------
+# ── TEST 8 — Concurrent load test ────────────────────────────────────────────
 
 def test8_concurrent_load():
     section("TEST 8 — Concurrent Load Test (20 simultaneous events)")
@@ -749,7 +701,6 @@ def test8_concurrent_load():
         t.join()
     elapsed = time.time() - t0
 
-    # Allow DB writes to settle
     time.sleep(1.0)
 
     all_200 = all(r == 200 for r in responses)
@@ -773,9 +724,7 @@ def test8_concurrent_load():
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# TEST 9 — DB constraint violation handling
-# ---------------------------------------------------------------------------
+# ── TEST 9 — DB constraint violation handling ─────────────────────────────────
 
 def test9_constraint_violation():
     section("TEST 9 — DB Constraint Violation Handling")
@@ -783,10 +732,8 @@ def test9_constraint_violation():
 
     eid = f"constraint-{uuid.uuid4().hex[:8]}"
 
-    # session.session_created with NO attendance_id.
-    # silver.sessions declares attendance_id BIGINT NOT NULL — insert will fail.
+    # attendance_id deliberately omitted — silver.sessions has it NOT NULL
     event = make_flat_event('session.session_created', {
-        # attendance_id deliberately omitted
         'class_id':   999901,
         'class_name': 'Constraint Test Class',
         'gmt_start_time': int(time.time()),
@@ -796,11 +743,9 @@ def test9_constraint_violation():
     resp = post(event)
     time.sleep(0.5)
 
-    # Server must return 200 regardless
     log_result("9a. Server returns HTTP 200 despite Silver constraint violation",
                resp.status_code == 200, f"status={resp.status_code}")
 
-    # Bronze must have the raw event preserved
     bronze_rows = q(conn,
         "SELECT routed_to_silver FROM bronze.webhook_events WHERE event_id = %s", (eid,))
     log_result("9b. Event is preserved in Bronze",
@@ -811,20 +756,16 @@ def test9_constraint_violation():
         log_result("9c. Bronze.routed_to_silver = false (Silver rolled back correctly)",
                    routed is False, f"routed_to_silver={routed}")
 
-    # Silver must NOT contain the malformed row
     silver_n = scalar(conn,
         "SELECT COUNT(*) FROM silver.sessions WHERE event_id = %s", (eid,))
     log_result("9d. Malformed event NOT written to Silver",
                silver_n == 0, f"Silver rows={silver_n}")
 
-    # Cleanup Bronze record
     cleanup(conn, [eid])
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------------------------
+# ── MAIN ──────────────────────────────────────────────────────────────────────
 
 def main():
     print("\n" + "="*62)
@@ -851,7 +792,6 @@ def main():
     test8_concurrent_load()
     test9_constraint_violation()
 
-    # Final summary
     total  = len(_results)
     passed = sum(1 for v in _results.values() if v)
     failed = total - passed

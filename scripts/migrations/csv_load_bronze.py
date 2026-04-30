@@ -1,45 +1,28 @@
-# =============================================================================
-# FILE    : scripts/migrations/csv_load_bronze.py
-# PROJECT : Edmingle Webhook Data Pipeline — Vyoma Samskrta Pathasala
-# PURPOSE : One-off script. Loads the two Edmingle CSV exports into Bronze.
-#           Run ONCE before csv_backfill_transactions.py.
-#           Safe to re-run: ON CONFLICT (source_row) DO NOTHING.
-# DATE    : 2026-04-29
-#
-# USAGE (from project root):
-#   python scripts/migrations/csv_load_bronze.py
-#
-# PREREQUISITES:
-#   1. Run database/setup.sql in pgAdmin to create the Bronze CSV tables.
-#   2. Ensure CSV files exist at:
-#        CSV files/studentexport.csv
-#        CSV files/studentCoursesEnrolled.csv
-# =============================================================================
-
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'), override=False)
+# ── CONFIG ──────────────────────────────────────
+DB_HOST           = "localhost"
+DB_NAME           = "edmingle_analytics"
+DB_USER           = "postgres"
+DB_PASSWORD       = "Svyoma"
+DB_PORT           = 5432
+WEBHOOK_SECRET    = "your_webhook_secret_here"
+EDMINGLE_API_KEY  = "859b19531f4b149a605679c5ea21eeb8"
+ORG_ID            = 683
+INSTITUTION_ID    = 483
+API_BASE_URL      = "https://vyoma-api.edmingle.com/nuSource/api/v1"
+# ─────────────────────────────────────────────────
 
 import pandas as pd
 import psycopg2
 import psycopg2.extras
 
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_PORT = int(os.getenv('DB_PORT', 5432))
-DB_NAME = os.getenv('DB_NAME', 'edmingle_analytics')
-DB_USER = os.getenv('DB_USER', 'postgres')
-DB_PASS = os.getenv('DB_PASS', '')
-
 CSV_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'CSV files')
 
-# ---------------------------------------------------------------------------
-# Column name mapping: CSV header → SQL column name in bronze.studentexport_raw
-# Preserves the original CSV order. source_row (pandas index) is added by code.
-# ---------------------------------------------------------------------------
+# CSV header → SQL column name mapping for bronze.studentexport_raw
 STUDENT_EXPORT_COLS = [
     ('#',                                                  'row_number'),
     ('Name',                                               'name'),
@@ -121,18 +104,16 @@ def _none_if_nan(val):
 
 def load_student_export(conn):
     path = os.path.join(CSV_DIR, 'studentexport.csv')
-    # skiprows=1 skips the decorative title row that appears before the header
+    # skiprows=1 skips the decorative title row above the header in this CSV.
     df = pd.read_csv(path, skiprows=1, dtype=str)
 
-    csv_cols  = [c for c, _ in STUDENT_EXPORT_COLS]
-    sql_cols  = [s for _, s in STUDENT_EXPORT_COLS]
-
+    csv_cols     = [c for c, _ in STUDENT_EXPORT_COLS]
+    sql_cols     = [s for _, s in STUDENT_EXPORT_COLS]
     sql_col_list = ', '.join(['source_row'] + sql_cols)
-    placeholders = ', '.join(['%s'] * (1 + len(sql_cols)))
 
     rows = []
     for idx, row in df.iterrows():
-        vals = [idx]  # source_row = 0-based pandas index
+        vals = [idx]
         for csv_col in csv_cols:
             vals.append(_none_if_nan(row.get(csv_col)))
         rows.append(tuple(vals))
@@ -168,7 +149,6 @@ def load_enrollments(conn):
     df = pd.read_csv(path, dtype=str)
 
     sql_col_list = ', '.join(['source_row'] + ENROLLMENT_COLS)
-    placeholders = ', '.join(['%s'] * (1 + len(ENROLLMENT_COLS)))
 
     rows = []
     for idx, row in df.iterrows():
@@ -205,12 +185,12 @@ def load_enrollments(conn):
 
 def main():
     print("=" * 60)
-    print("CSV Bronze Load — 2026-04-29")
+    print("CSV Bronze Load")
     print("=" * 60)
 
     conn = psycopg2.connect(
         host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
-        user=DB_USER, password=DB_PASS,
+        user=DB_USER, password=DB_PASSWORD,
     )
     try:
         load_student_export(conn)

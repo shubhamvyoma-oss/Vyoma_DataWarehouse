@@ -1,51 +1,33 @@
-# =============================================================================
-# FILE    : scripts/migrations/csv_backfill_transactions.py
-# PROJECT : Edmingle Webhook Data Pipeline — Vyoma Samskrta Pathasala
-# PURPOSE : One-off script. Transforms Bronze CSV data into Silver tables.
-#           Reads bronze.student_courses_enrolled_raw → silver.transactions
-#           Reads bronze.studentexport_raw → silver.users (via email join)
-#                                          → bronze.unresolved_students_raw
-#           Run AFTER csv_load_bronze.py has populated the Bronze tables.
-#           Safe to re-run: both Silver inserts use ON CONFLICT DO UPDATE.
-# DATE    : 2026-04-29
-#
-# USAGE (from project root):
-#   python scripts/migrations/csv_backfill_transactions.py
-#
-# PREREQUISITES:
-#   1. database/setup.sql applied (all Bronze/Silver tables exist).
-#   2. csv_load_bronze.py already run successfully.
-# =============================================================================
-
 import os
 import sys
 import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'), override=False)
+# ── CONFIG ──────────────────────────────────────
+DB_HOST           = "localhost"
+DB_NAME           = "edmingle_analytics"
+DB_USER           = "postgres"
+DB_PASSWORD       = "Svyoma"
+DB_PORT           = 5432
+WEBHOOK_SECRET    = "your_webhook_secret_here"
+EDMINGLE_API_KEY  = "859b19531f4b149a605679c5ea21eeb8"
+ORG_ID            = 683
+INSTITUTION_ID    = 483
+API_BASE_URL      = "https://vyoma-api.edmingle.com/nuSource/api/v1"
+# ─────────────────────────────────────────────────
 
 import psycopg2
 import psycopg2.extras
-
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_PORT = int(os.getenv('DB_PORT', 5432))
-DB_NAME = os.getenv('DB_NAME', 'edmingle_analytics')
-DB_USER = os.getenv('DB_USER', 'postgres')
-DB_PASS = os.getenv('DB_PASS', '')
 
 
 def db_connect():
     return psycopg2.connect(
         host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
-        user=DB_USER, password=DB_PASS,
+        user=DB_USER, password=DB_PASSWORD,
     )
 
 
-# ---------------------------------------------------------------------------
-# Show the current silver.transactions schema (equivalent to \d)
-# ---------------------------------------------------------------------------
 def show_transactions_schema(conn):
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
@@ -66,10 +48,8 @@ def show_transactions_schema(conn):
     print()
 
 
-# ---------------------------------------------------------------------------
-# Utility: treat '0' and '' as NULL for Unix timestamp columns
-# ---------------------------------------------------------------------------
 def _unix_or_null(val):
+    # Treat '0' and '' as NULL — enrollment CSVs use zero for missing timestamps.
     if val is None or str(val).strip() in ('', '0', 'None'):
         return None
     try:
@@ -78,26 +58,20 @@ def _unix_or_null(val):
         return None
 
 
-# ---------------------------------------------------------------------------
-# Utility: parse studentexport date_created  "M/D/YYYY HH:MM"  to TIMESTAMPTZ
-# The dates in studentexport.csv are in IST (Vyoma's local time).
-# We attach IST offset (+05:30) so PostgreSQL stores the correct UTC value.
-# ---------------------------------------------------------------------------
 def _parse_date_created(val):
+    # studentexport.csv uses "M/D/YYYY HH:MM" in IST — attach IST offset before storing.
     if not val or str(val).strip() in ('', 'None'):
         return None
     try:
         naive = datetime.datetime.strptime(val.strip(), '%m/%d/%Y %H:%M')
-        # Attach IST offset
         ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
         return naive.replace(tzinfo=ist)
     except (ValueError, AttributeError):
         return None
 
 
-# ---------------------------------------------------------------------------
-# STEP 1: bronze.student_courses_enrolled_raw → silver.transactions
-# ---------------------------------------------------------------------------
+# ── STEP 1: bronze.student_courses_enrolled_raw → silver.transactions ─────────
+
 def backfill_transactions(conn):
     cur_read = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur_read.execute("""
@@ -123,7 +97,7 @@ def backfill_transactions(conn):
         event_id   = f"csv-enrollment-{source_row}"
 
         try:
-            user_id               = int(row['user_id'])
+            user_id = int(row['user_id'])
         except (TypeError, ValueError):
             errors += 1
             continue
@@ -176,12 +150,10 @@ def backfill_transactions(conn):
     return inserted, skipped, errors
 
 
-# ---------------------------------------------------------------------------
-# STEP 2: bronze.studentexport_raw → silver.users (join on email for user_id)
-#         Unresolvable rows → bronze.unresolved_students_raw
-# ---------------------------------------------------------------------------
+# ── STEP 2: bronze.studentexport_raw → silver.users + bronze.unresolved_students_raw
+
 def backfill_users(conn):
-    # Build email → user_id lookup from enrollment table (one user_id per email)
+    # Build email → user_id lookup from enrollment table (one user_id per email).
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         SELECT DISTINCT ON (LOWER(TRIM(email)))
@@ -195,7 +167,6 @@ def backfill_users(conn):
     email_to_uid = {r['email_key']: r['user_id'] for r in cur.fetchall()}
     cur.close()
 
-    # Read all studentexport rows
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         SELECT source_row, name, email, contact_number_dial_code, contact_number,
@@ -207,34 +178,28 @@ def backfill_users(conn):
     student_rows = cur.fetchall()
     cur.close()
 
-    inserted_users     = 0
-    skipped_users      = 0
-    unresolved_count   = 0
+    inserted_users   = 0
+    skipped_users    = 0
+    unresolved_count = 0
     cur_u = conn.cursor()
 
     for row in student_rows:
-        source_row   = row['source_row']
-        raw_email    = row['email']
-        email_key    = raw_email.lower().strip() if raw_email else None
-        user_id      = email_to_uid.get(email_key) if email_key else None
+        source_row = row['source_row']
+        raw_email  = row['email']
+        email_key  = raw_email.lower().strip() if raw_email else None
+        user_id    = email_to_uid.get(email_key) if email_key else None
 
         if user_id is None:
-            # Cannot resolve user_id — save to unresolved table and move on
             cur_u.execute("""
                 INSERT INTO bronze.unresolved_students_raw (source_row, email, raw_row)
                 VALUES (%s, %s, %s)
                 ON CONFLICT DO NOTHING
-            """, (
-                source_row,
-                raw_email,
-                psycopg2.extras.Json(dict(row)),
-            ))
+            """, (source_row, raw_email, psycopg2.extras.Json(dict(row))))
             unresolved_count += 1
             continue
 
-        # Build contact_number: prefix dial code if both present
-        dial   = (row['contact_number_dial_code'] or '').strip()
-        phone  = (row['contact_number']           or '').strip()
+        dial  = (row['contact_number_dial_code'] or '').strip()
+        phone = (row['contact_number']           or '').strip()
         if dial and phone:
             contact_number = f"+{dial.lstrip('+')}{phone}"
         else:
@@ -286,12 +251,9 @@ def backfill_users(conn):
     return inserted_users, skipped_users, unresolved_count
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 def main():
     print("=" * 60)
-    print("CSV Silver Backfill — 2026-04-29")
+    print("CSV Silver Backfill")
     print("=" * 60)
     print()
 
@@ -299,7 +261,6 @@ def main():
     try:
         show_transactions_schema(conn)
 
-        # --- Bronze row counts ---
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM bronze.student_courses_enrolled_raw")
         n_enroll = cur.fetchone()[0]
@@ -311,7 +272,6 @@ def main():
         print(f"bronze.studentexport_raw:             {n_students} rows")
         print()
 
-        # --- Transactions ---
         print("Loading silver.transactions from enrollment CSV ...")
         t_ins, t_skip, t_err = backfill_transactions(conn)
         print(f"  silver.transactions inserted:          {t_ins}")
@@ -320,7 +280,6 @@ def main():
             print(f"  silver.transactions errors (bad user_id): {t_err}")
         print()
 
-        # --- Users ---
         print("Loading silver.users + unresolved from student export ...")
         u_ins, u_skip, u_unres = backfill_users(conn)
         print(f"  silver.users inserted:                 {u_ins}")
@@ -328,7 +287,6 @@ def main():
         print(f"  bronze.unresolved_students_raw:        {u_unres} (no email match)")
         print()
 
-        # --- Final Silver counts ---
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM silver.transactions")
         total_t = cur.fetchone()[0]
