@@ -314,11 +314,73 @@ One row per certificate issued to a student.
 
 ---
 
-## Tables Planned But Not Yet Built
+---
 
-| Table | Purpose |
-|-------|---------|
-| `bronze.course_metadata_raw` | Raw copy of a course classification CSV (maps bundle_id to subject area, level, language) |
-| `silver.course_metadata` | Cleaned course classifications — joins to `silver.transactions` by `bundle_id` |
-| `silver.daily_attendance` | Per-student attendance records pulled daily from Edmingle's `report_type=55` API endpoint |
-| `gold.*` | SQL VIEWs over the Silver tables, shaped for Power BI consumption — enrollment summaries, attendance rates, completion funnels. Not yet built. |
+## silver.course_metadata
+
+One row per course bundle. Populated daily by `fetch_course_catalogue.py`. Upsert key: `bundle_id`.
+
+| Column | Type | Description |
+|---|---|---|
+| `bundle_id` | BIGINT | Edmingle bundle identifier |
+| `course_name` | TEXT | Human-readable course name |
+| `course_type` | TEXT | Live / Recorded / Hybrid |
+| `status` | TEXT | published / unpublished / archived |
+| `subject` | TEXT | Academic subject area |
+| `term_of_course` | TEXT | Very Short / Short / Mid / Long |
+| `position_in_funnel` | TEXT | Bottom / Lower Middle / Middle / Upper Middle / Top |
+| `adhyayanam_category` | TEXT | Bhashadhyayanam / Granthadhyayanam / Shastradhyayanam |
+| `sss_category` | TEXT | Samskrta / Samskara / Samskriti |
+| `viniyoga` | TEXT | True / False |
+| `division` | TEXT | Organisational division |
+
+---
+
+## silver.course_batches
+
+One row per batch. Populated daily by `fetch_course_batches.py`. Upsert key: `batch_id`.
+
+| Column | Type | Description |
+|---|---|---|
+| `batch_id` | BIGINT | Edmingle batch identifier |
+| `bundle_id` | BIGINT | Parent bundle |
+| `batch_name` | TEXT | Batch name |
+| `batch_status` | TEXT | active / archived |
+| `start_date_ist` | TIMESTAMPTZ | Batch start date in IST |
+| `end_date_ist` | TIMESTAMPTZ | Batch end date in IST |
+| `tutor_id` | BIGINT | Primary teacher ID |
+| `tutor_name` | TEXT | Primary teacher name |
+| `admitted_students` | INTEGER | Total students enrolled |
+
+---
+
+## silver.course_lifecycle
+
+One row per batch from the Course Lifecycle MIS tracker. Populated once by `csv_transform_course_silver.py`. Upsert key: `course_id` (maps to `bundle_id`).
+
+Key columns: `course_id`, `course_name`, `type_of_launch`, `first_class_date`, `last_class_date`, `enrollments_on_fc`, `enrollments_on_lc`, `avg_attendance`, `total_certified`, `overall_rating`.
+
+---
+
+## silver.course_master
+
+Denormalised flat table joining course_metadata + course_batches + course_lifecycle. One row per batch. Fully rebuilt (TRUNCATE + INSERT) on every `run_course_pipeline.py` run. Power BI reads directly from this table.
+
+---
+
+## silver.class_attendance
+
+One row per batch per class date. Populated daily by `fetch_attendance.py`. Upsert key: `(batch_id, class_date)`.
+
+| Column | Type | Description |
+|---|---|---|
+| `batch_id` | BIGINT | Batch identifier |
+| `bundle_id` | BIGINT | Parent bundle |
+| `class_date` | DATE | Date of the class |
+| `class_number` | INTEGER | Sequential class number within the batch (1 = first class) |
+| `present_count` | INTEGER | Students marked P (Present) |
+| `late_count` | INTEGER | Students marked L (Late) — counted as attended in attendance_pct |
+| `absent_count` | INTEGER | Students marked A (Absent) |
+| `total_enrolled` | INTEGER | Total students enrolled in the batch |
+| `attendance_pct` | NUMERIC(5,2) | (present + late) / (present + late + absent) * 100 |
+| `pull_date` | DATE | Date on which this row was last updated |

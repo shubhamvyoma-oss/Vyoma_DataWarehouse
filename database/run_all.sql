@@ -1,31 +1,49 @@
 -- Run all schema files in order against the edmingle_analytics database.
 -- Usage (psql): psql -U postgres -d edmingle_analytics -f database/run_all.sql
--- Usage (pgAdmin): open this file in Query Tool and execute.
--- Each \i path is relative to the project root — run from there.
+-- Run from the project root directory so all \i paths resolve correctly.
 
+-- ── Schemas ──────────────────────────────────────────────────────────────────
 \i database/schemas/01_create_schemas.sql
 
-\i database/bronze/01_webhook_events.sql
-\i database/bronze/02_failed_events.sql
-\i database/bronze/03_studentexport_raw.sql
-\i database/bronze/04_student_courses_enrolled_raw.sql
-\i database/bronze/05_unresolved_students_raw.sql
+-- ── Bronze: Webhook events ────────────────────────────────────────────────────
+\i database/bronze/webhook/webhook_events.sql
+\i database/bronze/webhook/failed_events.sql
 
-\i database/silver/01_users.sql
-\i database/silver/02_transactions.sql
-\i database/silver/03_sessions.sql
-\i database/silver/04_assessments.sql
-\i database/silver/05_courses.sql
-\i database/silver/06_announcements.sql
-\i database/silver/07_certificates.sql
+-- ── Bronze: Manual / CSV imports ─────────────────────────────────────────────
+\i database/bronze/manual/studentexport_raw.sql
+\i database/bronze/manual/student_courses_enrolled_raw.sql
+\i database/bronze/manual/unresolved_students_raw.sql
+\i database/bronze/manual/course_lifecycle_raw.sql
 
-\i database/bronze/06_course_catalogue_raw.sql
-\i database/bronze/07_course_lifecycle_raw.sql
-\i database/bronze/08_course_batches_raw.sql
+-- ── Silver: Webhook-sourced tables ───────────────────────────────────────────
+\i database/silver/webhook/users.sql
+\i database/silver/webhook/transactions.sql
+\i database/silver/webhook/sessions.sql
+\i database/silver/webhook/assessments.sql
+\i database/silver/webhook/courses.sql
+\i database/silver/webhook/announcements.sql
+\i database/silver/webhook/certificates.sql
 
-\i database/silver/08_course_metadata.sql
-\i database/silver/09_course_lifecycle.sql
-\i database/silver/10_course_batches.sql
-\i database/silver/11_course_master.sql
+-- ── Bronze: API-pulled tables ─────────────────────────────────────────────────
+\i database/bronze/api/course_catalogue_raw.sql
+\i database/bronze/api/course_batches_raw.sql
 
-\i database/gold/01_gold_views.sql
+-- ── Silver: Manual / CSV-sourced tables ───────────────────────────────────────
+\i database/silver/manual/course_lifecycle.sql
+
+-- ── Silver: API-sourced tables ────────────────────────────────────────────────
+\i database/silver/api/course_metadata.sql
+\i database/silver/api/course_batches.sql
+\i database/silver/api/course_master.sql
+
+-- ── Bronze: Attendance (API) ──────────────────────────────────────────────────
+\i database/bronze/api/attendance_raw.sql
+
+-- ── Silver: Attendance (API) ──────────────────────────────────────────────────
+\i database/silver/api/class_attendance.sql
+
+-- ── Gold: Course views (from webhook + API silver tables) ─────────────────────
+\i database/gold/webhook/gold_views.sql
+
+-- ── Gold: Attendance views (from API silver tables) ───────────────────────────
+\i database/gold/api/attendance_views.sql

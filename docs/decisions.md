@@ -59,12 +59,12 @@ ALTERNATIVE CONSIDERED: Store in UTC and apply timezone conversion in Power BI o
 ---
 
 DECISION: Hardcode credentials in a CONFIG block in every script instead of using a `.env` file or environment variables
-WHY: The pipeline will be handed off to Shankar (VPS admin) and Shashank (code reviewer). Both need to be able to open a single file, update four values, and run it — with no knowledge of dotenv, environment variables, or shell configuration. A CONFIG block at the top of each file is the most readable and least error-prone approach for this team.
+WHY: Anyone deploying the pipeline needs to open a single file, update four values, and run it — with no knowledge of dotenv, environment variables, or shell configuration. A CONFIG block at the top of each file is the most readable and least error-prone approach.
 ALTERNATIVE CONSIDERED: `python-dotenv` with a `.env` file. Rejected because it requires an extra dependency, a separate file to manage, and knowledge of how dotenv works. Also considered environment variables set in the shell — rejected for the same reason.
 NOTE: The CONFIG values should never be committed to git. Each file's CONFIG block is set locally on each machine. The `.env.example` file documents what values are needed.
 
 ---
 
 DECISION: One repository for everything (webhook receiver, API scripts, migrations, tests, schema)
-WHY: The team is small and the pipeline is not large enough to justify splitting into separate repos. Keeping everything together means one `git clone`, one place to look for any file, and no cross-repo dependency management. Shashank reviews code in one place.
-ALTERNATIVE CONSIDERED: Separate repos for ingestion, migrations, and infrastructure. Rejected as unnecessary complexity for a one-developer project with two reviewers.
+WHY: The pipeline is not large enough to justify splitting into separate repos. Keeping everything together means one `git clone`, one place to look for any file, and no cross-repo dependency management.
+ALTERNATIVE CONSIDERED: Separate repos for ingestion, migrations, and infrastructure. Rejected as unnecessary complexity.

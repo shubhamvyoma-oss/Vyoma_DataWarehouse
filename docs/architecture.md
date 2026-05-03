@@ -23,11 +23,16 @@ Edmingle LMS
      │                                    silver.announcements
      │                                    silver.certificates
      │
-     ├── API Scripts (scheduled, not yet built) ──→ api_scripts/
+     ├── API Scripts (scheduled) ──────────────→ api_scripts/
      │                                              │
-     │                                    bronze.daily_attendance_raw (planned)
+     │                                    bronze.attendance_raw
+     │                                    bronze.course_catalogue_raw
+     │                                    bronze.course_batches_raw
      │                                              │
-     │                                    silver.daily_attendance (planned)
+     │                                    silver.class_attendance
+     │                                    silver.course_metadata
+     │                                    silver.course_batches
+     │                                    silver.course_master
      │
      └── CSV (one-time historical backfill) ──→ scripts/migrations/
                                                         │
@@ -48,13 +53,17 @@ Bronze is the raw data store. Every event or CSV row is saved here exactly as it
 
 **Why keep raw data?** If the Silver transformation logic has a bug, you can re-run it against Bronze without needing to re-fetch from Edmingle. Bronze is also the audit trail — you can always prove what came in and when.
 
-| Table | Contents |
-|-------|----------|
-| `bronze.webhook_events` | Every webhook event received from Edmingle, stored as raw JSON |
-| `bronze.failed_events` | Requests that arrived but could not be parsed or stored (malformed JSON, DB down, etc.) |
-| `bronze.studentexport_raw` | Raw copy of the studentexport.csv historical file |
-| `bronze.student_courses_enrolled_raw` | Raw copy of the studentCoursesEnrolled.csv historical file |
-| `bronze.unresolved_students_raw` | Students from CSV whose email could not be matched to an Edmingle user_id |
+| Table | Source | Contents |
+|-------|--------|----------|
+| `bronze.webhook_events` | Webhook | Every webhook event received from Edmingle, stored as raw JSON |
+| `bronze.failed_events` | Webhook | Requests that arrived but could not be parsed or stored |
+| `bronze.studentexport_raw` | CSV import | Raw copy of the studentexport.csv historical file |
+| `bronze.student_courses_enrolled_raw` | CSV import | Raw copy of the studentCoursesEnrolled.csv historical file |
+| `bronze.unresolved_students_raw` | CSV import | Students from CSV whose email could not be matched to an Edmingle user_id |
+| `bronze.course_catalogue_raw` | API | All course bundles with classification fields |
+| `bronze.course_batches_raw` | API | All batch records (nested under bundles, flattened) |
+| `bronze.course_lifecycle_raw` | CSV import | Course operations MIS tracker (107 columns per batch) |
+| `bronze.attendance_raw` | API | One row per student per class session (attendance status P/L/A/-) |
 
 ---
 
@@ -68,15 +77,20 @@ Silver is the cleaned, typed, and deduplicated store. Each row in a Silver table
 - Null values from partial events are filled in when a later event provides them
 - Typed columns replace the raw JSONB: BIGINT for IDs, NUMERIC for prices, BOOLEAN for flags
 
-| Table | Contents |
-|-------|----------|
-| `silver.users` | One row per student; upsert key is `user_id` |
-| `silver.transactions` | One row per enrollment (student + course + batch); upsert key is `(user_id, bundle_id, master_batch_id)` |
-| `silver.sessions` | One row per live class instance; upsert key is `attendance_id` |
-| `silver.assessments` | One row per assessment submission or evaluation; upsert key is `event_id` |
-| `silver.courses` | One row per course completion; upsert key is `event_id` |
-| `silver.announcements` | One row per announcement; raw JSONB stored (structure not yet documented) |
-| `silver.certificates` | One row per certificate issued; upsert key is `event_id` |
+| Table | Source | Contents |
+|-------|--------|----------|
+| `silver.users` | Webhook | One row per student; upsert key is `user_id` |
+| `silver.transactions` | Webhook + CSV | One row per enrollment; upsert key is `(user_id, bundle_id, master_batch_id)` |
+| `silver.sessions` | Webhook | One row per live class instance; upsert key is `attendance_id` |
+| `silver.assessments` | Webhook | One row per assessment event; upsert key is `event_id` |
+| `silver.courses` | Webhook | One row per course completion; upsert key is `event_id` |
+| `silver.announcements` | Webhook | One row per announcement; raw JSONB stored |
+| `silver.certificates` | Webhook | One row per certificate issued; upsert key is `event_id` |
+| `silver.course_metadata` | API | One row per course bundle; all Vyoma classification fields |
+| `silver.course_batches` | API | One row per batch; typed dates, tutor, enrolled count |
+| `silver.course_lifecycle` | CSV import | One row per batch from the MIS tracker; lifecycle metrics |
+| `silver.course_master` | API (denormalised) | Flat table joining metadata + batches + lifecycle; rebuilt daily |
+| `silver.class_attendance` | API | One row per batch per class date; present/late/absent counts and attendance_pct |
 
 ---
 
@@ -84,11 +98,19 @@ Silver is the cleaned, typed, and deduplicated store. Each row in a Silver table
 
 Gold is the reporting layer. It contains SQL VIEWs that join and aggregate Silver tables into shapes that Power BI can consume directly. Gold views contain no new data — everything comes from Silver.
 
-**Planned Gold views (not yet built):**
-- `gold.student_summary` — one row per student with enrollment count, attendance rate, completion status
-- `gold.monthly_enrollments` — enrollment counts by month and course
-- `gold.session_attendance` — attendance rates by batch and date range
-- `gold.certificate_pipeline` — how many students are at each stage toward certification
+**Gold views (built):**
+
+Course / enrollment views (`gold/webhook/gold_views.sql`):
+- `gold.course_summary` — per course-batch: enrollment counts, lifecycle dates, classification
+- `gold.learner_summary` — new vs returning learners per course
+- `gold.course_type_summary`, `gold.launch_type_summary`, `gold.subject_summary`
+- `gold.learning_model_summary`, `gold.term_summary`, `gold.funnel_summary`, `gold.sss_domain_summary`
+
+Attendance views (`gold/api/attendance_views.sql`):
+- `gold.batch_attendance_summary` — per-batch: avg attendance %, first/last class counts
+- `gold.bundle_attendance_summary` — aggregated to course level
+- `gold.attendance_by_year` — year-by-year attendance trends
+- `gold.first_vs_last_class` — drop-off analysis per batch
 
 ---
 
@@ -97,18 +119,7 @@ Gold is the reporting layer. It contains SQL VIEWs that join and aggregate Silve
 | Component | Technology |
 |-----------|-----------|
 | Webhook receiver | Python 3, Flask |
-| Database | PostgreSQL 18 (local dev), PostgreSQL on VPS (production) |
+| Database | PostgreSQL 14 (local dev), PostgreSQL on VPS (production) |
 | DB connection pooling | psycopg2 ThreadedConnectionPool (min 2, max 20) |
 | Dashboards | Power BI (live connection to gold.* views) |
-| Hosting (planned) | VPS managed by Shankar, with systemd keeping the receiver running |
-
----
-
-## Who Uses What
-
-| Person | Role |
-|--------|------|
-| **Shankar** | Manages the VPS server and PostgreSQL instance in production. Handles server access and uptime. |
-| **Aishwarya** | Uses Power BI connected to the Gold views to build and view dashboards. |
-| **Shubham** | Built and maintains the entire pipeline — webhook receiver, migrations, tests, schema. |
-| **Shashank** | Reviews code on GitHub before changes go to production. |
+| Hosting | VPS with systemd keeping the receiver running |

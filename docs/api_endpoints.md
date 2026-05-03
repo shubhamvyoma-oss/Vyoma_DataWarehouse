@@ -188,65 +188,121 @@ GET /failed
 
 These are endpoints on Edmingle's servers that this project calls. Base URL: `https://vyoma-api.edmingle.com/nuSource/api/v1`
 
-All requests require the API key in the header: `X-API-KEY: <api_key>`
+All requests require headers: `apikey: <api_key>` and `ORGID: 683`
 
 ---
 
-### GET /report/csv?report_type=55 — Attendance Report (Planned)
+### GET /report/csv?report_type=55 — Global Student Attendance
 
-**Status: Not yet built. Script will be at `api_scripts/report55_attendance.py`.**
+**Status: Built. Script: `api_scripts/fetch_attendance.py`**
 
-Returns a CSV-formatted attendance report for all students on a given date. This replaces a per-student loop — one call covers all ~93,000 students.
+Returns all students' attendance status for every class session that falls within a given IST date window. One call per day covers all students across all active batches.
 
 **Request:**
 ```
-GET /report/csv?report_type=55&date=2024-03-08&org_id=683
-X-API-KEY: <api_key>
+GET /report/csv
+  ?report_type=55
+  &organization_id=683
+  &start_time=<unix IST 00:00:00>
+  &end_time=<unix IST 23:59:59>
+  &response_type=1
+Headers: apikey, ORGID
 ```
 
 **Parameters:**
 | Parameter | Description | Example |
-|-----------|-------------|---------|
-| `report_type` | Always 55 for the attendance report | `55` |
-| `date` | The date to pull attendance for | `2024-03-08` |
-| `org_id` | Vyoma's organisation ID in Edmingle | `683` |
+|---|---|---|
+| `report_type` | Always 55 | `55` |
+| `organization_id` | Vyoma's organisation ID | `683` |
+| `start_time` | IST midnight as Unix timestamp | `1728864000` |
+| `end_time` | IST end-of-day as Unix timestamp | `1728950399` |
+| `response_type` | `1` = JSON response (default is CSV) | `1` |
 
-**What the script will do:**
-1. Call this endpoint for today's date
-2. Parse the CSV response
-3. Insert each row into `bronze.daily_attendance_raw`
-4. Transform and upsert into `silver.daily_attendance`
-
-**Planned schedule:** Run once per day via cron or systemd timer, shortly after midnight IST.
+**Response:** JSON array of objects. One object per student per class session. Key fields: `student_Id`, `studentName`, `studentEmail`, `batch_Id`, `batchName`, `class_Id`, `className`, `bundle_Id`, `bundleName`, `course_Id`, `courseName`, `studentAttendanceStatus` (P/L/A/-/E/OL/NA), `classDate`, `startTime`, `endTime`, `classDuration`, `teacher_Id`, `teacherName`, `attendanceId`, `studentRating`, `studentComments`.
 
 ---
 
-### GET /organization/students — Student List (Planned)
+### GET /institute/{INST_ID}/courses/catalogue — Course Catalogue
 
-**Status: Not yet built. Would be used for registration backfill.**
+**Status: Built. Script: `api_scripts/fetch_course_catalogue.py`**
 
-Returns a paginated list of all registered students in the organisation.
+Returns all course bundles with full metadata including Vyoma-specific custom fields.
 
 **Request:**
 ```
-GET /organization/students?org_id=683&page=1&per_page=100
-X-API-KEY: <api_key>
+GET /institute/483/courses/catalogue
+Headers: apikey, ORGID
 ```
 
-**Why this is useful:** The `studentexport.csv` from the historical backfill could not resolve 22,834 students. This endpoint could provide a `user_id`-to-email mapping that would let us match and load those students into `silver.users`.
+**Response:** Paginated list of bundle objects. Includes `bundle_id`, `bundle_name`, and all custom classification fields (subject, SSS category, adhyayanam category, funnel position, term of course, viniyoga, division).
 
 ---
 
-### GET /reports/sales?reportDetailsType=3 — Enrollment History (Planned)
+### GET /short/masterbatch — All Batches
 
-**Status: Not yet built.**
+**Status: Built. Script: `api_scripts/fetch_course_batches.py`**
 
-Returns month-by-month enrollment history. Could be used to verify that the CSV backfill captured all historical transactions correctly.
+Returns all batches grouped under their parent bundle. Used to get current batch metadata (dates, tutor, enrollment count).
 
 **Request:**
 ```
-GET /reports/sales?reportDetailsType=3&org_id=683&from=2020-01-01&to=2024-12-31
-X-API-KEY: <api_key>
+GET /short/masterbatch
+  ?status=0
+  &page=1
+  &per_page=100
+  &organization_id=683
+  &bundle_id=0
+Headers: apikey, ORGID
+```
+
+**Response structure:**
+```json
+{
+  "bundles": [
+    {
+      "bundle_id": 1234,
+      "bundle_name": "Sanskrit Foundation",
+      "batch": [
+        { "class_id": 5678, "class_name": "Batch A 2024", "mb_admitted_students": 45, ... }
+      ]
+    }
+  ],
+  "page_context": { "has_more_page": true }
+}
+```
+
+Note: In the API response, `class_id` and `class_name` at the batch level refer to what we call `batch_id` and `batch_name` in the database.
+
+---
+
+### GET /organization/students — Student List
+
+Returns a paginated list of all registered students.
+
+**Request:**
+```
+GET /organization/students?organization_id=683&page=1&per_page=100
+Headers: apikey, ORGID
+```
+
+Not currently used by any script (historical backfill used CSV instead). Useful for resolving the 22,834 unmatched students in `bronze.unresolved_students_raw`.
+
+---
+
+### GET /institution/dataexport?type=N — Data Export (Not yet implemented)
+
+Returns bulk data exports by type. High-value types not yet built into the pipeline:
+
+| Type | Description |
+|---|---|
+| `5` | User engagement stats (videos watched, time spent, login count per student) |
+| `8` | Material view stats per student (requires `start_date` param) |
+| `10` | Exercise/quiz completion stats per student |
+
+**Request:**
+```
+GET /institution/dataexport?type=5&organization_id=683&page=1&per_page=100
+Headers: apikey, ORGID
 ```
 
 ---

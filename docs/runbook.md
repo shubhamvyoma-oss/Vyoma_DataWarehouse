@@ -29,7 +29,7 @@ cd E-Learning-Vyoma-DataWarehouse
 
 ### Set credentials in each script
 
-There is no `.env` file. Every script has a `CONFIG` block near the top of the file. Open each file and update these values:
+Every script has a `CONFIG` block near the top of the file. Open each file and update these values:
 
 ```python
 DB_HOST        = "localhost"       # or your VPS IP
@@ -38,11 +38,16 @@ DB_USER        = "postgres"
 DB_PASSWORD    = "your_password"
 DB_PORT        = 5432
 WEBHOOK_SECRET = "your_webhook_secret_here"
+API_KEY        = "your_edmingle_api_key"
 ```
 
 Files that need their CONFIG block updated:
 - `ingestion/webhook_receiver.py`
 - `ingestion/reprocess_bronze.py`
+- `api_scripts/fetch_attendance.py`
+- `api_scripts/fetch_course_catalogue.py`
+- `api_scripts/fetch_course_batches.py`
+- `api_scripts/run_course_pipeline.py`
 - `scripts/external/check_db_counts.py`
 - `scripts/external/clear_test_data.py`
 - `scripts/external/reprocess_bronze.py`
@@ -120,15 +125,13 @@ curl http://localhost:5000/health
 curl http://localhost:5000/status
 ```
 
-### Attendance pull (not yet built)
-
-Once `api_scripts/report55_attendance.py` is built, run it daily:
+### Attendance pull (daily)
 
 ```bash
-python api_scripts/report55_attendance.py
+python api_scripts/fetch_attendance.py
 ```
 
-This will call Edmingle's `report_type=55` endpoint and store attendance data in `silver.daily_attendance`.
+Pulls yesterday's attendance by default. Calls Edmingle's `report_type=55` endpoint and stores data in `bronze.attendance_raw` → `silver.class_attendance`.
 
 ---
 
@@ -255,13 +258,13 @@ python tests/test_all_events.py
 
 ---
 
-## 5. How to Deploy to VPS (Shankar's Server)
+## 5. How to Deploy to VPS
 
 ### SSH and clone
 
 ```bash
 ssh user@vps-ip-address
-git clone https://github.com/shubhamvyoma-oss/E-Learning-Vyoma-DataWarehouse.git
+git clone https://github.com/ShubhamK0802/E-Learning-Vyoma-DataWarehouse.git
 cd E-Learning-Vyoma-DataWarehouse
 pip install flask psycopg2-binary requests
 ```

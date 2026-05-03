@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "C:\Users\asust\E-Learning-Vyoma-DataWarehouse\api_scripts\fetch_attendance.py", line 416, in <module>
+    main()
+  File "C:\Users\asust\E-Learning-Vyoma-DataWarehouse\api_scripts\fetch_attendance.py", line 366, in main
+    bronze_n, staff_n = save_to_bronze(conn, rows, d)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\asust\E-Learning-Vyoma-DataWarehouse\api_scripts\fetch_attendance.py", line 140, in save_to_bronze
+    cur.execute("""
+psycopg2.errors.DeadlockDetected: deadlock detected
+DETAIL:  Process 36416 waits for ShareLock on transaction 5369; blocked by process 1368.
+Process 1368 waits for ShareLock on transaction 5372; blocked by process 36416.
+HINT:  See server log for query details.
+CONTEXT:  while inserting index tuple (2571,1) in relation "attendance_raw"
+
