@@ -25,7 +25,9 @@
       "Bash(git -C \"C:/Users/asust/E-Learning-Vyoma-DataWarehouse\" mv \"database/gold/02_attendance_views.sql\"  \"database/gold/api/attendance_views.sql\")",
       "Bash(git check-ignore *)",
       "Bash(git status *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

@@ -1,6 +1,201 @@
-# Vyoma E-Learning Data Warehouse
+# Vyoma Samskrta Pathasala — Data Warehouse
 
-Automated data pipeline for **Vyoma Samskrta Pathasala** ([sanskritfromhome.org](https://www.sanskritfromhome.org)), built on top of the Edmingle LMS platform. The warehouse collects all student, enrollment, attendance, and course data into a structured PostgreSQL database and makes it available for Power BI dashboards.
+This repository contains the complete data pipeline for Vyoma Samskrta Pathasala's e-learning platform. It collects student, course, attendance, and enrollment data from the Edmingle LMS and stores it in a PostgreSQL database that Power BI reads for reporting.
+
+---
+
+## How the data flows
+
+```
+Edmingle LMS (online platform)
+  │
+  ├── Live events (real-time)  ─────────────────────────────────────────
+  │     Student registers, buys course, attends class, gets certificate
+  │     │
+  │     │  HTTP POST  (webhooks, sent instantly)
+  │     │
+  │     ▼
+  │   [06] webhook_receiver.py   ← always running server
+  │
+  ├── Batch API (scheduled pull) ──────────────────────────────────────
+  │     Course catalogue, batch details
+  │     │
+  │     ├── [02] fetch_course_catalogue.py   (weekly)
+  │     └── [03] fetch_course_batches.py     (daily)
+  │
+  └── Attendance API (scheduled pull) ─────────────────────────────────
+        Class attendance records
+        │
+        └── [01] fetch_attendance.py   (daily)
+
+        ─────────────────────────────────────────────────────────────
+                        PostgreSQL Database
+        ─────────────────────────────────────────────────────────────
+
+        BRONZE LAYER  (raw data — exact copy of source)
+          bronze.webhook_events
+          bronze.attendance_raw
+          bronze.course_catalogue_raw
+          bronze.course_batches_raw
+          bronze.course_lifecycle_raw
+          bronze.studentexport_raw
+          bronze.student_courses_enrolled_raw
+
+        SILVER LAYER  (cleaned, typed, deduplicated)
+          silver.users
+          silver.transactions
+          silver.sessions
+          silver.assessments
+          silver.certificates
+          silver.courses
+          silver.announcements
+          silver.course_metadata
+          silver.course_batches
+          silver.course_lifecycle
+          silver.class_attendance
+
+        REPORTING TABLES  (wide tables for Power BI)
+          silver."MasterCourseBatch"
+          silver.course_meta_data
+
+        ─────────────────────────────────────────────────────────────
+                        Power BI   (reads Silver)
+        ─────────────────────────────────────────────────────────────
+```
+
+---
+
+## Folder structure
+
+Each script has its own numbered folder. The number shows the recommended run order.
+
+### Daily scripts (run every morning at 7:00 AM IST)
+
+| Folder | Script | What it does |
+|--------|--------|-------------|
+| `01_fetch_attendance/` | `fetch_attendance.py` | Downloads yesterday's class attendance from the API |
+| `04_run_course_pipeline/` | `run_course_pipeline.py` | Runs scripts 02 and 03 together (catalogue + batches) |
+
+### Weekly scripts (run when courses change)
+
+| Folder | Script | What it does |
+|--------|--------|-------------|
+| `02_fetch_course_catalogue/` | `fetch_course_catalogue.py` | Downloads the list of all courses from the API |
+| `03_fetch_course_batches/` | `fetch_course_batches.py` | Downloads all course batch details from the API |
+
+### Always-running server
+
+| Folder | Script | What it does |
+|--------|--------|-------------|
+| `06_webhook_receiver/` | `webhook_receiver.py` | Flask server that receives live events from Edmingle |
+
+### On-demand / maintenance scripts
+
+| Folder | Script | What it does |
+|--------|--------|-------------|
+| `05_build_courses/` | `build_courses.py` | Builds the two wide reporting tables for Power BI |
+| `07_reprocess_bronze/` | `reprocess_bronze.py` | Re-routes all Bronze events to Silver (recovery tool) |
+| `15_run_analysis/` | `run_analysis.py` | Prints a 10-section business metrics report |
+
+### One-time migration scripts (run once to load historical data)
+
+Run in this order:
+
+| Step | Folder | Script | What it does |
+|------|--------|--------|-------------|
+| 1 | `08_load_students_csv/` | `load_students_csv.py` | Loads student export CSVs into Bronze |
+| 2 | `09_load_courses_csv/` | `load_courses_csv.py` | Loads course catalogue/lifecycle/batches CSVs into Bronze |
+| 3 | `10_transform_courses_silver/` | `transform_courses_silver.py` | Transforms Bronze course data to Silver |
+| 4 | `11_backfill_transactions/` | `backfill_transactions.py` | Creates Silver users and transactions from CSV Bronze |
+
+### Utility scripts
+
+| Folder | Script | What it does |
+|--------|--------|-------------|
+| `12_check_db_counts/` | `check_db_counts.py` | Prints row counts for all Bronze and Silver tables |
+| `13_clear_test_data/` | `clear_test_data.py` | Deletes test rows from all tables (with confirmation prompt) |
+| `14_test_webhook_send/` | `test_webhook_send.py` | Sends a single test event to the webhook server |
+
+### Test scripts
+
+| Folder | Script | What it does |
+|--------|--------|-------------|
+| `16_test_all_events/` | `test_all_events.py` | Sends one test event per event type, checks Silver tables |
+| `17_test_db_unavailability/` | `test_db_unavailability.py` | Tests zero data loss during a DB outage |
+| `18_test_pipeline_e2e/` | `test_pipeline_e2e.py` | 9-test comprehensive end-to-end suite |
+
+---
+
+## Database configuration
+
+All scripts connect to PostgreSQL using these settings (hardcoded in each script):
+
+| Setting | Value |
+|---------|-------|
+| Host | `localhost` |
+| Port | `5432` |
+| Database | `edmingle_analytics` |
+| User | `postgres` |
+| Password | `Svyoma` |
+
+---
+
+## How to set up from scratch
+
+### Prerequisites
+
+- Python 3.9+
+- PostgreSQL 14+
+- Required packages: `pip install psycopg2-binary requests flask pandas`
+
+### Steps
+
+1. Create the database and run all migration SQL files to create the tables
+2. Run the one-time CSV migrations (scripts 08, 09, 10, 11) to load historical data
+3. Start the webhook server: `python 06_webhook_receiver/webhook_receiver.py`
+4. Set up Edmingle to send webhooks to `http://your-server:5000/webhook`
+5. Schedule the daily scripts (01 and 04) to run at 7:00 AM IST
+
+---
+
+## Database layers explained
+
+### Bronze layer
+
+- Holds data **exactly as received** from the API or webhooks — no changes
+- Safe to re-load: all Bronze tables use `ON CONFLICT DO NOTHING` or `DO UPDATE`
+- If a Silver transform breaks, you can always re-run it from Bronze
+
+### Silver layer
+
+- Holds **cleaned, typed, and deduplicated** data
+- This is what Power BI reads
+- Uses `ON CONFLICT ... DO UPDATE SET` (UPSERT) so re-running is always safe
+
+### Reporting tables
+
+- `silver."MasterCourseBatch"` and `silver.course_meta_data` are wide tables built by script 05
+- They join course metadata + batch details + lifecycle stats into one place
+- Power BI only needs to query these two tables for the main course dashboard
+
+---
+
+## Troubleshooting
+
+**Bronze table is empty:**
+Run the relevant fetch script (01, 02, or 03) and check for API errors.
+
+**Silver table is empty but Bronze has data:**
+Run script 07 (`reprocess_bronze.py`) to re-route all Bronze events to Silver.
+
+**Webhook events not arriving:**
+Check that the Edmingle webhook URL points to your server and that the server is running.
+
+**Power BI shows stale data:**
+Run the daily pipeline scripts (01 and 04) and then refresh Power BI.
+
+**Events in `bronze.failed_events`:**
+Call `POST http://localhost:5000/retry-failed` to re-process them, or check the failure reason and fix the underlying issue.
 
 ---
 
