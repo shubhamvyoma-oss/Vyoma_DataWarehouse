@@ -301,18 +301,21 @@ def insert_single_record_to_silver(db_cursor, row_data, b_id, status_text):
     sql_command = """
         INSERT INTO silver.course_metadata (
             bundle_id, course_name, subject, level, language, texts,
-            type, course_division, certificate, course_sponsor, status,
+            type, course_type, course_division, division, viniyoga, certificate, course_sponsor, status,
             number_of_lectures, duration, personas, sss_category,
             adhyayanam_category, term_of_course, position_in_funnel,
             num_students, imported_at
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
         )
         ON CONFLICT (bundle_id) DO UPDATE SET
             course_name = EXCLUDED.course_name, subject = EXCLUDED.subject,
             level = EXCLUDED.level, language = EXCLUDED.language,
             texts = EXCLUDED.texts, type = EXCLUDED.type,
-            course_division = EXCLUDED.course_division, certificate = EXCLUDED.certificate,
+            course_type = EXCLUDED.course_type,
+            course_division = EXCLUDED.course_division, division = EXCLUDED.division,
+            viniyoga = EXCLUDED.viniyoga,
+            certificate = EXCLUDED.certificate,
             course_sponsor = EXCLUDED.course_sponsor, status = EXCLUDED.status,
             number_of_lectures = EXCLUDED.number_of_lectures, duration = EXCLUDED.duration,
             personas = EXCLUDED.personas, sss_category = EXCLUDED.sss_category,
@@ -327,7 +330,9 @@ def insert_single_record_to_silver(db_cursor, row_data, b_id, status_text):
         b_id, clean_text_data(row_data.get('course_name')),
         clean_text_data(row_data.get('subject')), clean_text_data(row_data.get('level')),
         clean_text_data(row_data.get('language')), clean_text_data(row_data.get('texts')),
-        clean_text_data(row_data.get('type')), clean_text_data(row_data.get('course_division')),
+        clean_text_data(row_data.get('type')), clean_text_data(row_data.get('type')),
+        clean_text_data(row_data.get('course_division')), clean_text_data(row_data.get('division')),
+        clean_text_data(row_data.get('viniyoga')),
         clean_text_data(row_data.get('certificate')), clean_text_data(row_data.get('course_sponsor')),
         status_text, clean_text_data(row_data.get('number_of_lectures')),
         clean_text_data(row_data.get('duration')), clean_text_data(row_data.get('personas')),
