@@ -316,7 +316,7 @@ One row per certificate issued to a student.
 
 ---
 
-## silver.course_meta_data (Master Table)
+## silver.course_metadata (Master Table)
 
 This is the "Master" course table that joins everything together. It contains 65 columns covering course details, schedules, attendance, and performance metrics. Power BI reads directly from this table.
 

@@ -30,7 +30,7 @@
 -- ── API Sources (Edmingle API)
 \i database/silver/api/batches_data.sql
 \i database/silver/api/course_batch_merge.sql
-\i database/silver/api/course_meta_data.sql
+\i database/silver/api/course_metadata.sql
 \i database/silver/api/attendance_data.sql
 \i database/silver/api/course_catalogue.sql
 
