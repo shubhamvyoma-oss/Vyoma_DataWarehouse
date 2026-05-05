@@ -167,12 +167,12 @@ def show_course_info(database_cursor):
     # Print the section title.
     print_section_header(2, "COURSE CATALOGUE")
     # Count total unique course bundles.
-    sql = "SELECT COUNT(*) FROM silver.course_metadata"
+    sql = "SELECT COUNT(*) FROM silver.course_catalogue"
     total_courses = get_one_value_from_db(database_cursor, sql)
     print_metric_line("Total unique courses", format_with_commas(total_courses))
     # Show how many courses we have for each subject.
     print_sub_header("Courses by Subject")
-    breakdown_sql = "SELECT subject, COUNT(*) FROM silver.course_metadata GROUP BY subject ORDER BY 2 DESC"
+    breakdown_sql = "SELECT subject, COUNT(*) FROM silver.course_catalogue GROUP BY subject ORDER BY 2 DESC"
     show_data_breakdown(database_cursor, breakdown_sql, "Subject", "Count")
 
 # Section 3: Shows information about course batches.
@@ -262,7 +262,7 @@ def show_top_courses(database_cursor):
     # Print the section title.
     print_section_header(10, "TOP COURSES")
     # Get the top 5 courses based on the number of students.
-    top_sql = "SELECT cm.course_name, COUNT(*) FROM silver.transactions t JOIN silver.course_metadata cm ON t.bundle_id = cm.bundle_id WHERE t." + STAFF_FILTER + " GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
+    top_sql = "SELECT cm.course_name, COUNT(*) FROM silver.transactions t JOIN silver.course_catalogue cm ON t.bundle_id = cm.bundle_id WHERE t." + STAFF_FILTER + " GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
     show_data_breakdown(database_cursor, top_sql, "Course Name", "Students")
 
 # This function runs all 10 report sections.

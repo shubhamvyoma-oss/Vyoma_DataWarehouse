@@ -316,7 +316,7 @@ One row per certificate issued to a student.
 
 ---
 
-## silver.course_metadata (Master Table)
+## silver.course_catalogue (Master Table)
 
 This is the "Master" course table that joins everything together. It contains 65 columns covering course details, schedules, attendance, and performance metrics. Power BI reads directly from this table.
 
@@ -423,7 +423,7 @@ Key columns: `course_id`, `course_name`, `type_of_launch`, `first_class_date`, `
 
 ## silver.course_batch_merge
 
-Denormalised flat table joining course_metadata + course_batches + course_lifecycle. One row per batch. Fully rebuilt (TRUNCATE + INSERT) on every `run_course_pipeline.py` run. Power BI reads directly from this table.
+Denormalised flat table joining course_catalogue + course_batches + course_lifecycle. One row per batch. Fully rebuilt (TRUNCATE + INSERT) on every `run_course_pipeline.py` run. Power BI reads directly from this table.
 | Column | Type | Description |
 |---|---|---|
 Bundle id

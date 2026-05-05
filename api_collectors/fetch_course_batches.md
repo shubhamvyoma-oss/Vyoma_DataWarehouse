@@ -55,14 +55,14 @@ Key fields: `bundle_id`, `bundle_name`, `batch_id`, `batch_name`, `batch_status`
 
 One row per batch. Typed columns: `batch_id` (BIGINT), `bundle_id` (BIGINT), `start_date_ist` (TIMESTAMPTZ), `end_date_ist` (TIMESTAMPTZ), `admitted_students` (INTEGER).
 
-Also populates `silver.course_master` by joining `silver.course_metadata` with `silver.course_batches` and `silver.course_lifecycle` into a single denormalised table that Power BI reads directly.
+Also populates `silver.course_master` by joining `silver.course_catalogue` with `silver.course_batches` and `silver.course_lifecycle` into a single denormalised table that Power BI reads directly.
 
 ---
 
 ## silver.course_master Rebuild
 
 After every batch upsert, `silver.course_master` is fully rebuilt by truncating and re-inserting from a join of:
-- `silver.course_metadata` — course classification fields
+- `silver.course_catalogue` — course classification fields
 - `silver.course_batches` — batch dates, tutor, enrolled count
 - `silver.course_lifecycle` — first/last class dates, ratings, certification counts
 

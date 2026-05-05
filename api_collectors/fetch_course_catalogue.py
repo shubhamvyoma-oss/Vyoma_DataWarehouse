@@ -299,7 +299,7 @@ def is_record_valid_for_silver(data_row):
 def insert_single_record_to_silver(db_cursor, row_data, b_id, status_text):
     # SQL command to insert or update silver metadata
     sql_command = """
-        INSERT INTO silver.course_metadata (
+        INSERT INTO silver.course_catalogue (
             bundle_id, course_name, subject, level, language, texts,
             type, course_type, course_division, division, viniyoga, certificate, course_sponsor, status,
             number_of_lectures, duration, personas, sss_category,

@@ -6,7 +6,7 @@ Orchestrates the full course data refresh: catalogue → batches → master tabl
 
 ## Steps
 
-1. **Step 1 — Course Catalogue**: Calls `fetch_course_catalogue.main()` which pulls all bundles from the API, upserts `bronze.course_catalogue_raw`, and promotes to `silver.course_metadata`.
+1. **Step 1 — Course Catalogue**: Calls `fetch_course_catalogue.main()` which pulls all bundles from the API, upserts `bronze.course_catalogue_raw`, and promotes to `silver.course_catalogue`.
 
 2. **Step 2 — Course Batches + Master**: Calls `fetch_course_batches.main()` which pulls all batches, upserts `bronze.course_batches_raw`, promotes to `silver.course_batches`, and fully rebuilds `silver.course_master`.
 
@@ -29,7 +29,7 @@ COURSE DATA PIPELINE
   -----------------------------------------
   Catalogue API     : SUCCESS
   Batches API       : SUCCESS
-  Silver rows       : 541 course_metadata, 995 course_batches
+  Silver rows       : 541 course_catalogue, 995 course_batches
   Master table      : 995 rows rebuilt
   Power BI ready    : YES
   Run time          : 14.3s

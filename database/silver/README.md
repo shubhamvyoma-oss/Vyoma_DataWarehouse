@@ -26,7 +26,7 @@ Think of it like a kitchen:
 | **`transactions`** | Records of enrollments and payments. | Tells us which students joined which courses and how much they paid. |
 | **`sessions`** | Info about live class sessions. | Helps us track when classes happen and how long they last. |
 | **`course_lifecycle`**| The "story" of a course batch. | Shows how many students started, finished, and how they felt about the course. |
-| **`course_metadata`**| The "Master" course table. | Combines all course details into one place for easy reporting. |
+| **`course_catalogue`**| The "Master" course table. | Combines all course details into one place for easy reporting. |
 
 ---
 

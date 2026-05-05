@@ -11,7 +11,7 @@ SELECT
     -- Unique ID for the course bundle.
     class_attendance_table.bundle_id,
     -- The name of the course.
-    course_metadata_table.course_name,
+    course_catalogue_table.course_name,
     -- The name of the specific batch.
     course_batches_table.batch_name,
     -- The name of the teacher/tutor for this batch.
@@ -43,9 +43,9 @@ SELECT
     ) THEN class_attendance_table.present_count ELSE NULL END) AS last_class_present_count
 -- We start with the class attendance data from the silver layer.
 FROM silver.class_attendance AS class_attendance_table
--- We join with course metadata to get the course name.
-LEFT JOIN silver.course_metadata AS course_metadata_table 
-    ON class_attendance_table.bundle_id = course_metadata_table.bundle_id
+-- We join with course catalogue to get the course name.
+LEFT JOIN silver.course_catalogue AS course_catalogue_table 
+    ON class_attendance_table.bundle_id = course_catalogue_table.bundle_id
 -- We join with course batches to get batch details like name and tutor.
 LEFT JOIN silver.course_batches AS course_batches_table 
     ON class_attendance_table.batch_id = course_batches_table.batch_id
@@ -53,7 +53,7 @@ LEFT JOIN silver.course_batches AS course_batches_table
 GROUP BY
     class_attendance_table.batch_id, 
     class_attendance_table.bundle_id, 
-    course_metadata_table.course_name,
+    course_catalogue_table.course_name,
     course_batches_table.batch_name, 
     course_batches_table.tutor_name, 
     course_batches_table.start_date_ist,
@@ -117,7 +117,7 @@ SELECT
     -- Unique ID for the course bundle.
     class_attendance_table.bundle_id,
     -- The name of the course.
-    course_metadata_table.course_name,
+    course_catalogue_table.course_name,
     -- The name of the specific batch.
     course_batches_table.batch_name,
     -- Getting the student count from the first class (Class Number 1).
@@ -146,14 +146,14 @@ SELECT
     ) AS student_drop_off_percentage
 -- Joining the tables similarly to the first view.
 FROM silver.class_attendance AS class_attendance_table
-LEFT JOIN silver.course_metadata AS course_metadata_table 
-    ON class_attendance_table.bundle_id = course_metadata_table.bundle_id
+LEFT JOIN silver.course_catalogue AS course_catalogue_table 
+    ON class_attendance_table.bundle_id = course_catalogue_table.bundle_id
 LEFT JOIN silver.course_batches AS course_batches_table 
     ON class_attendance_table.batch_id = course_batches_table.batch_id
 -- Grouping by batch, course, and enrollment details.
 GROUP BY 
     class_attendance_table.batch_id, 
     class_attendance_table.bundle_id, 
-    course_metadata_table.course_name,
+    course_catalogue_table.course_name,
     course_batches_table.batch_name, 
     course_batches_table.admitted_students;

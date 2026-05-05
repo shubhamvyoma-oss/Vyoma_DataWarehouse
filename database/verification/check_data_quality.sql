@@ -100,15 +100,15 @@ FROM silver.batches_data
 LIMIT 10;
 
 
--- ── 8. CHECK COURSE METADATA TABLE ─────────────────────────────────
--- Checking the column names for the 'course_metadata' table.
+-- ── 8. CHECK COURSE CATALOGUE TABLE ─────────────────────────────────
+-- Checking the column names for the 'course_catalogue' table.
 SELECT 
     column_name AS field_name
 FROM information_schema.columns
 WHERE table_schema = 'silver'
-AND table_name = 'course_metadata';
+AND table_name = 'course_catalogue';
 
--- Checking a sample of 10 rows from the 'course_metadata' table.
+-- Checking a sample of 10 rows from the 'course_catalogue' table.
 SELECT * 
-FROM silver.course_metadata 
+FROM silver.course_catalogue 
 LIMIT 10;

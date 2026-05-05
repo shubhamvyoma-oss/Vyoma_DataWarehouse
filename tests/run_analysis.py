@@ -129,7 +129,7 @@ def report_course_catalogue(database_cursor):
     # We print the main section heading
     print_section_header(2, "COURSE CATALOGUE")
     # We count how many courses we have in total
-    sql = "SELECT COUNT(*) FROM silver.course_metadata"
+    sql = "SELECT COUNT(*) FROM silver.course_catalogue"
     total_courses = get_single_value(database_cursor, sql)
     # We show the total course count
     print_metric_line("Total courses in catalogue", format_big_number(total_courses))
@@ -137,7 +137,7 @@ def report_course_catalogue(database_cursor):
     # We show a breakdown by subject
     print_subsection_title("By Subject")
     # We ask the database to count courses for each subject
-    sql = "SELECT subject, COUNT(*) FROM silver.course_metadata GROUP BY 1 ORDER BY 2 DESC"
+    sql = "SELECT subject, COUNT(*) FROM silver.course_catalogue GROUP BY 1 ORDER BY 2 DESC"
     database_cursor.execute(sql)
     # We loop through every row the database gives us
     for result_row in database_cursor.fetchall():

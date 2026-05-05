@@ -66,7 +66,7 @@ def save_catalogue_row(cursor, data):
         return 0
     # SQL command to save the data
     sql = """
-        INSERT INTO silver.course_metadata (
+        INSERT INTO silver.course_catalogue (
             bundle_id, course_name, subject, status, num_students, imported_at
         ) VALUES (%s, %s, %s, %s, %s, NOW())
         ON CONFLICT (bundle_id) DO UPDATE SET

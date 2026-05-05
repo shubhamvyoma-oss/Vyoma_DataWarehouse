@@ -5,31 +5,31 @@
 CREATE SCHEMA IF NOT EXISTS gold;
 
 -- ── VIEW 1: gold.course ───────────────────────────────────────────────
--- This view provides a detailed list of courses with their metadata and enrollment counts.
+-- This view provides a detailed list of courses with their catalogue and enrollment counts.
 CREATE OR REPLACE VIEW gold.course AS
 SELECT
     -- Unique ID for the course bundle.
-    course_metadata_table.bundle_id,
+    course_catalogue_table.bundle_id,
     -- The full name of the course.
-    course_metadata_table.course_name,
+    course_catalogue_table.course_name,
     -- The category or type of the course.
-    course_metadata_table.course_type,
+    course_catalogue_table.course_type,
     -- The current status (e.g., Active, Completed).
-    course_metadata_table.status,
+    course_catalogue_table.status,
     -- The subject area of the course.
-    course_metadata_table.subject,
+    course_catalogue_table.subject,
     -- How long the course lasts (e.g., Short, Long).
-    course_metadata_table.term_of_course,
+    course_catalogue_table.term_of_course,
     -- Where this course sits in the marketing funnel.
-    course_metadata_table.position_in_funnel,
+    course_catalogue_table.position_in_funnel,
     -- Category related to Adhyayanam studies.
-    course_metadata_table.adhyayanam_category,
+    course_catalogue_table.adhyayanam_category,
     -- Category related to SSS (Samskrta, Samskara, Samskriti).
-    course_metadata_table.sss_category,
+    course_catalogue_table.sss_category,
     -- Whether the course is for Viniyoga.
-    course_metadata_table.viniyoga,
+    course_catalogue_table.viniyoga,
     -- The division the course belongs to.
-    course_metadata_table.division,
+    course_catalogue_table.division,
     -- How the course was launched (e.g., Repeat, New).
     course_lifecycle_table.type_of_launch,
     -- Date of the first class held.
@@ -53,29 +53,29 @@ SELECT
     COUNT(DISTINCT CASE WHEN transactions_table.source = 'webhook' THEN transactions_table.user_id ELSE NULL END) AS live_enrollments_count,
     -- Counting unique users who were imported from historical CSV files.
     COUNT(DISTINCT CASE WHEN transactions_table.source = 'csv.import' THEN transactions_table.user_id ELSE NULL END) AS historical_enrollments_count
--- Starting with the main course metadata table.
-FROM silver.course_metadata AS course_metadata_table
+-- Starting with the main course catalogue table.
+FROM silver.course_catalogue AS course_catalogue_table
 -- Joining with course lifecycle to get dates and performance metrics.
 LEFT JOIN silver.course_lifecycle AS course_lifecycle_table
-    ON course_metadata_table.bundle_id = course_lifecycle_table.course_id
+    ON course_catalogue_table.bundle_id = course_lifecycle_table.course_id
 -- Joining with transactions to count students.
 LEFT JOIN silver.transactions AS transactions_table
-    ON course_metadata_table.bundle_id = transactions_table.bundle_id
+    ON course_catalogue_table.bundle_id = transactions_table.bundle_id
    -- Excluding staff members from the counts.
    AND transactions_table.email NOT LIKE '%@vyoma%'
 -- Grouping by all descriptive columns so the counts work for each course.
 GROUP BY
-    course_metadata_table.bundle_id, 
-    course_metadata_table.course_name, 
-    course_metadata_table.course_type, 
-    course_metadata_table.status,
-    course_metadata_table.subject, 
-    course_metadata_table.term_of_course, 
-    course_metadata_table.position_in_funnel,
-    course_metadata_table.adhyayanam_category, 
-    course_metadata_table.sss_category, 
-    course_metadata_table.viniyoga,
-    course_metadata_table.division, 
+    course_catalogue_table.bundle_id, 
+    course_catalogue_table.course_name, 
+    course_catalogue_table.course_type, 
+    course_catalogue_table.status,
+    course_catalogue_table.subject, 
+    course_catalogue_table.term_of_course, 
+    course_catalogue_table.position_in_funnel,
+    course_catalogue_table.adhyayanam_category, 
+    course_catalogue_table.sss_category, 
+    course_catalogue_table.viniyoga,
+    course_catalogue_table.division, 
     course_lifecycle_table.type_of_launch, 
     course_lifecycle_table.first_class_date,
     course_lifecycle_table.last_class_date, 
@@ -103,11 +103,11 @@ SELECT
     -- Unique ID for the course bundle.
     transactions_table.bundle_id,
     -- The name of the course.
-    course_metadata_table.course_name,
+    course_catalogue_table.course_name,
     -- The category of the course.
-    course_metadata_table.course_type,
+    course_catalogue_table.course_type,
     -- Marketing funnel position.
-    course_metadata_table.position_in_funnel,
+    course_catalogue_table.position_in_funnel,
     -- Total unique students in this course.
     COUNT(DISTINCT transactions_table.user_id) AS total_learners_count,
     -- Counting students for whom this course started on their very first enrollment date.
@@ -119,17 +119,17 @@ FROM silver.transactions AS transactions_table
 -- Joining with our subquery to know each student's history.
 JOIN first_enrollment_data 
     ON transactions_table.user_id = first_enrollment_data.user_id
--- Joining with course metadata to get course names and types.
-LEFT JOIN silver.course_metadata AS course_metadata_table 
-    ON transactions_table.bundle_id = course_metadata_table.bundle_id
+-- Joining with course catalogue to get course names and types.
+LEFT JOIN silver.course_catalogue AS course_catalogue_table 
+    ON transactions_table.bundle_id = course_catalogue_table.bundle_id
 -- Excluding staff members.
 WHERE transactions_table.email NOT LIKE '%@vyoma%'
 -- Grouping to get counts per course.
 GROUP BY 
     transactions_table.bundle_id, 
-    course_metadata_table.course_name, 
-    course_metadata_table.course_type, 
-    course_metadata_table.position_in_funnel;
+    course_catalogue_table.course_name, 
+    course_catalogue_table.course_type, 
+    course_catalogue_table.position_in_funnel;
 
 
 -- ── VIEW 3: gold.course_type ─────────────────────────────────────────

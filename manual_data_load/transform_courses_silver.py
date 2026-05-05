@@ -63,7 +63,7 @@ def convert_row_to_dict(row_data, column_info):
     return row_dictionary
 
 # This function saves a course metadata record to the silver table
-def save_course_metadata(cursor, course_data):
+def save_course_catalogue(cursor, course_data):
     # Clean the ID and other fields
     bundle_id = clean_integer_value(course_data.get("bundle_id"))
     # If there is no ID, we skip this row
@@ -72,14 +72,14 @@ def save_course_metadata(cursor, course_data):
     name = clean_text_value(course_data.get("course_name"))
     cost = clean_float_value(course_data.get("cost"))
     # SQL command to insert the data
-    sql = "INSERT INTO silver.course_metadata (bundle_id, course_name, cost, imported_at) "
+    sql = "INSERT INTO silver.course_catalogue (bundle_id, course_name, cost, imported_at) "
     sql = sql + "VALUES (%s, %s, %s, NOW()) ON CONFLICT (bundle_id) DO NOTHING"
     # Execute the command
     cursor.execute(sql, (bundle_id, name, cost))
     return cursor.rowcount
 
 # This function handles all the metadata rows
-def process_all_course_metadata(connection):
+def process_all_course_catalogue(connection):
     # Read from the bronze table
     read_cursor = connection.cursor()
     read_cursor.execute("SELECT * FROM bronze.course_catalogue_raw")
@@ -92,7 +92,7 @@ def process_all_course_metadata(connection):
         # Convert row to dictionary for easier use
         data_dict = convert_row_to_dict(row, columns)
         # Save the record and update the count
-        rows_affected = save_course_metadata(write_cursor, data_dict)
+        rows_affected = save_course_catalogue(write_cursor, data_dict)
         total_added = total_added + rows_affected
     # Save the changes
     connection.commit()
@@ -112,7 +112,7 @@ def main():
         )
         # Run the process
         print("Processing metadata...")
-        added_count = process_all_course_metadata(db_connection)
+        added_count = process_all_course_catalogue(db_connection)
         print("Course metadata rows added: " + str(added_count))
         # Close the connection
         db_connection.close()

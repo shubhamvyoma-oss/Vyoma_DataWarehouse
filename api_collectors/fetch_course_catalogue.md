@@ -30,7 +30,7 @@ Key custom fields specific to Vyoma:
 
 ---
 
-## Silver Table: `silver.course_metadata`
+## Silver Table: `silver.course_catalogue`
 
 One row per bundle. Promotes typed and cleaned columns from Bronze. Key columns: `bundle_id` (BIGINT), `course_name`, `course_type`, `status`, `subject`, `term_of_course`, `position_in_funnel`, `adhyayanam_category`, `sss_category`, `viniyoga`, `division`.
 

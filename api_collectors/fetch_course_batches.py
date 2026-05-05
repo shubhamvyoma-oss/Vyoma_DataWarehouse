@@ -412,7 +412,7 @@ def rebuild_final_master_table(db_connection):
             CASE WHEN cm.course_division = 'Course' AND cb.bundle_id IS NOT NULL AND cm.status IN ('Completed', 'Ongoing', 'Upcoming') THEN 1 ELSE 0 END,
             '', COALESCE(hb.has_b, 0), NOW()
         FROM silver.course_batches cb
-        LEFT JOIN silver.course_metadata cm ON cb.bundle_id = cm.bundle_id
+        LEFT JOIN silver.course_catalogue cm ON cb.bundle_id = cm.bundle_id
         LEFT JOIN latest_batch lb ON cb.bundle_id = lb.bundle_id AND cb.batch_id = lb.batch_id
         LEFT JOIN has_batch_flag hb ON cb.bundle_id = hb.bundle_id
         UNION ALL
@@ -421,7 +421,7 @@ def rebuild_final_master_table(db_connection):
             cm.position_in_funnel, cm.adhyayanam_category, cm.sss_category,
             cm.viniyoga, cm.division, cm.status, cm.status,
             0, 0, '', 0, NOW()
-        FROM silver.course_metadata cm
+        FROM silver.course_catalogue cm
         WHERE NOT EXISTS (SELECT 1 FROM silver.course_batches cb WHERE cb.bundle_id = cm.bundle_id)
     """
     # Execute the command

@@ -110,7 +110,7 @@ SQL_FILL_TABLE = """
                 ORDER BY cb.start_date DESC NULLS LAST, cb.batch_id DESC
             ) AS rank_order
         FROM silver.course_batches AS cb
-        LEFT JOIN silver.course_metadata AS cm ON cb.bundle_id = cm.bundle_id
+        LEFT JOIN silver.course_catalogue AS cm ON cb.bundle_id = cm.bundle_id
         WHERE cb.batch_name NOT LIKE '%Test batch%'
     )
     SELECT 
@@ -151,7 +151,7 @@ SQL_FILL_TABLE = """
         cm.texts, cm.certificate, cm.course_sponsor,
         cm.number_of_lectures, cm.duration,
         '', cm.course_ids
-    FROM silver.course_metadata AS cm
+    FROM silver.course_catalogue AS cm
     WHERE NOT EXISTS (
         SELECT 1 FROM silver.course_batches AS cb 
         WHERE cb.bundle_id = cm.bundle_id 

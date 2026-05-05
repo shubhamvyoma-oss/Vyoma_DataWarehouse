@@ -46,9 +46,9 @@ UNION ALL
 
 -- 6. Count rows in the course metadata table (Silver layer).
 SELECT 
-    'silver.course_metadata' AS database_table_name, 
+    'silver.course_catalogue' AS database_table_name, 
     COUNT(*) AS total_row_count 
-FROM silver.course_metadata
+FROM silver.course_catalogue
 
 -- We sort the final list by the table name to make it easy to read.
 ORDER BY database_table_name;

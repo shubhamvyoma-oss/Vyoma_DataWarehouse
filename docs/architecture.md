@@ -30,7 +30,7 @@ Edmingle LMS
      │                                    bronze.course_batches_raw
      │                                              │
      │                                    silver.attendance_data
-     │                                    silver.course_metadata
+     │                                    silver.course_catalogue
      │                                    silver.batches_Data
      │                                    silver.course_batch_merge_data
      |                                    silver.course_catalogue_data
@@ -94,7 +94,7 @@ Silver is the cleaned, typed, and deduplicated store. Each row in a Silver table
 | `silver.batches_data` | API | One row per batch; typed dates, tutor, enrolled count |
 | `silver.course_batch_merge_data` | API | One row per course bundle; joining batches_Data + course_catalogue_data |
 | `silver.course_lifecycle` | CSV import | One row per batch from the MIS tracker; lifecycle metrics |
-| `silver.course_metadata` | API | Flat table joining course_batch_merge_data + lifecycle; rebuilt daily |
+| `silver.course_catalogue` | API | Flat table joining course_batch_merge_data + lifecycle; rebuilt daily |
 | `silver.attendance_data` | API | One row per batch per class date; present/late/absent counts and attendance_pct |
 
 ---

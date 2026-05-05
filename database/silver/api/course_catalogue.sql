@@ -1,12 +1,12 @@
 -- =============================================================================
--- SILVER TABLE: course_metadata
+-- SILVER TABLE: course_catalogue
 -- =============================================================================
 -- This is the 'Master Bundle' table. It stores unique course bundles.
 -- =============================================================================
 
-DROP TABLE IF EXISTS silver.course_metadata CASCADE;
+DROP TABLE IF EXISTS silver.course_catalogue CASCADE;
 
-CREATE TABLE silver.course_metadata (
+CREATE TABLE silver.course_catalogue (
     id                                              SERIAL PRIMARY KEY,
     bundle_id                                       BIGINT UNIQUE,
     course_name                                     TEXT,
@@ -35,6 +35,6 @@ CREATE TABLE silver.course_metadata (
     created_at                                      TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_metadata_bundle ON silver.course_metadata(bundle_id);
-CREATE INDEX IF NOT EXISTS idx_metadata_subject ON silver.course_metadata(subject);
+CREATE INDEX IF NOT EXISTS idx_catalogue_bundle ON silver.course_catalogue(bundle_id);
+CREATE INDEX IF NOT EXISTS idx_catalogue_subject ON silver.course_catalogue(subject);
 
