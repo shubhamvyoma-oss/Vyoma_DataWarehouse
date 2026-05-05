@@ -1,56 +1,54 @@
-# database/silver/
+# Silver Layer: Cleaned and Polished Data
 
-Silver is the cleaned, typed, and deduplicated data layer. Every row in a Silver table represents one real-world entity — one student, one enrollment, one class session, one batch. Silver tables are built from Bronze using UPSERT logic: processing the same event twice produces one row, not two.
+Welcome to the **Silver Layer**! This is the second step in our data journey. 
 
----
+## What is the Silver Layer?
 
-## Subfolders
+In the first step (Bronze), we collected raw data that was often messy, incomplete, or repetitive. In the **Silver Layer**, we take that raw data and "polish" it. 
 
-| Folder | Source | Tables |
-|---|---|---|
-| `webhook/` | Promoted from `bronze.webhook_events` by the webhook receiver | `users`, `transactions`, `sessions`, `assessments`, `courses`, `announcements`, `certificates` |
-| `api/` | Promoted from API Bronze tables by `api_scripts/` | `course_metadata`, `course_batches`, `course_master`, `class_attendance` |
-| `manual/` | Promoted from manual/CSV Bronze tables by migration scripts | `course_lifecycle` |
+Think of it like a kitchen:
+*   **Bronze** is the raw vegetables delivered from the farm (they might have dirt on them).
+*   **Silver** is when the vegetables are washed, peeled, and chopped, ready for cooking!
 
----
-
-## webhook/
-
-Tables built from real-time webhook events. The webhook receiver writes to these tables immediately after inserting into Bronze.
-
-- **`users.sql`** — One row per student. Upsert key: `user_id`. COALESCE merges partial updates so later nulls never overwrite earlier values.
-- **`transactions.sql`** — One row per student-course-batch enrollment. Upsert key: `(user_id, bundle_id, master_batch_id)`. Merges CSV backfill and live webhook data.
-- **`sessions.sql`** — One row per live class session instance. Upsert key: `attendance_id`. Multiple events (created, started, cancelled) for the same session merge into one row.
-- **`assessments.sql`** — One row per assessment event. Upsert key: `event_id`.
-- **`courses.sql`** — One row per course completion. Upsert key: `event_id`.
-- **`announcements.sql`** — One row per announcement. Raw JSONB payload stored.
-- **`certificates.sql`** — One row per certificate issued. Upsert key: `event_id`.
+### Why do we need Silver?
+1.  **No Duplicates:** We use "Upsert" logic. This means if we get the same student info twice, we don't create two rows; we just update the one we already have.
+2.  **Standard Dates:** We convert all times to India Standard Time (IST) so everyone is looking at the same clock.
+3.  **Correct Types:** We make sure numbers are treated as numbers and dates are treated as dates.
+4.  **Readable Names:** We use clear names for columns so anyone can understand what the data represents.
 
 ---
 
-## api/
+## Important Tables in Silver
 
-Tables built from scheduled API pulls.
-
-- **`course_metadata.sql`** — One row per course bundle. All Vyoma classification fields (subject, SSS category, funnel position, etc.) as typed columns. Upsert key: `bundle_id`.
-- **`course_batches.sql`** — One row per batch. Typed start/end dates as IST TIMESTAMPTZ. Upsert key: `batch_id`.
-- **`course_master.sql`** — Denormalised table joining course_metadata + course_batches + course_lifecycle into one flat table for Power BI. Fully rebuilt on every pipeline run. Contains computed flags: `is_latest_batch`, `include_in_course_count`, `has_batch`.
-- **`class_attendance.sql`** — One row per batch per class date. Aggregated from `bronze.attendance_raw`. Columns: `present_count`, `late_count`, `absent_count`, `total_enrolled`, `attendance_pct`, `class_number`. Upsert key: `(batch_id, class_date)`.
-
----
-
-## manual/
-
-Tables built from CSV migration scripts.
-
-- **`course_lifecycle.sql`** — One row per batch from the Course Lifecycle MIS tracker. Contains milestone dates (launch, first class, last class), attendance averages, assessment and certification counts, and ratings. Upsert key: `course_id` (bundle_id).
+| Table Name | What it Stores | Why it's Important |
+|:---|:---|:---|
+| **`users`** | A list of all our students. | Helps us know exactly who our learners are. |
+| **`transactions`** | Records of enrollments and payments. | Tells us which students joined which courses and how much they paid. |
+| **`sessions`** | Info about live class sessions. | Helps us track when classes happen and how long they last. |
+| **`course_lifecycle`**| The "story" of a course batch. | Shows how many students started, finished, and how they felt about the course. |
+| **`course_meta_data`**| The "Master" course table. | Combines all course details into one place for easy reporting. |
 
 ---
 
-## What Cleaning Happens in Silver
+## Common Errors and How to Fix Them
 
-- Unix timestamps are converted to IST (UTC+5:30) using the `unix_to_ist()` helper function
-- Typed columns replace raw JSONB: `BIGINT` for IDs, `NUMERIC` for prices, `BOOLEAN` for flags, `DATE`/`TIMESTAMPTZ` for dates
-- Duplicate events for the same entity are merged using COALESCE (existing non-null values are never overwritten by null)
-- Staff rows (email contains `@vyoma`) are excluded during Bronze-to-Silver promotion
-- `attendance_pct` formula: `(present + late) / (present + late + absent) * 100` — Late students count as attended
+If you run into trouble while working with Silver tables, check this table for help!
+
+| Error Message / Issue | What it Means | How to Fix It |
+|:---|:---|:---|
+| **`duplicate key value violates unique constraint`** | You are trying to add a row that already exists. | Use an `INSERT ... ON CONFLICT` (Upsert) statement instead of a plain `INSERT`. |
+| **`column "..." does not exist`** | You typed the name of a column wrong or it hasn't been added yet. | Check the SQL file for that table to see the exact spelling of the column names. |
+| **`invalid input syntax for type numeric`** | You are trying to put text (like "Free") into a price column. | Make sure the data is a clean number before inserting it. |
+| **`relation "silver.table_name" does not exist`** | The table hasn't been created yet. | Run the `.sql` file for that table to create it in the database. |
+| **`null value in column "user_id" violates not-null constraint`** | You are trying to add a record without a required ID. | Check your source data to make sure every record has a valid ID. |
+
+---
+
+## How to use these files
+
+To create or update these tables in your database, you can run them using a tool like `psql` or through our automation scripts.
+
+Example command:
+```bash
+psql -d edmingle_analytics -f database/silver/users.sql
+```

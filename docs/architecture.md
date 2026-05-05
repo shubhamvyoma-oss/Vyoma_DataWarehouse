@@ -29,15 +29,18 @@ Edmingle LMS
      │                                    bronze.course_catalogue_raw
      │                                    bronze.course_batches_raw
      │                                              │
-     │                                    silver.class_attendance
+     │                                    silver.attendance_data
      │                                    silver.course_metadata
-     │                                    silver.course_batches
-     │                                    silver.course_master
+     │                                    silver.batches_Data
+     │                                    silver.course_batch_merge_data
+     |                                    silver.course_catalogue_data
+     |                                    silver.course_lifecycle
      │
      └── CSV (one-time historical backfill) ──→ scripts/migrations/
                                                         │
                                               bronze.studentexport_raw
                                               bronze.student_courses_enrolled_raw
+                                              bronze.course_lifecycle_raw
                                                         │
                                               silver.users
                                               silver.transactions
@@ -76,6 +79,7 @@ Silver is the cleaned, typed, and deduplicated store. Each row in a Silver table
 - Duplicate events for the same entity are merged (COALESCE keeps the most complete version)
 - Null values from partial events are filled in when a later event provides them
 - Typed columns replace the raw JSONB: BIGINT for IDs, NUMERIC for prices, BOOLEAN for flags
+- Merging two different dataset to create a master data table
 
 | Table | Source | Contents |
 |-------|--------|----------|
@@ -86,11 +90,12 @@ Silver is the cleaned, typed, and deduplicated store. Each row in a Silver table
 | `silver.courses` | Webhook | One row per course completion; upsert key is `event_id` |
 | `silver.announcements` | Webhook | One row per announcement; raw JSONB stored |
 | `silver.certificates` | Webhook | One row per certificate issued; upsert key is `event_id` |
-| `silver.course_metadata` | API | One row per course bundle; all Vyoma classification fields |
-| `silver.course_batches` | API | One row per batch; typed dates, tutor, enrolled count |
+| `silver.course_catalogue_data` | API | One row per bundle |
+| `silver.batches_data` | API | One row per batch; typed dates, tutor, enrolled count |
+| `silver.course_batch_merge_data` | API | One row per course bundle; joining batches_Data + course_catalogue_data |
 | `silver.course_lifecycle` | CSV import | One row per batch from the MIS tracker; lifecycle metrics |
-| `silver.course_master` | API (denormalised) | Flat table joining metadata + batches + lifecycle; rebuilt daily |
-| `silver.class_attendance` | API | One row per batch per class date; present/late/absent counts and attendance_pct |
+| `silver.course_metadata` | API | Flat table joining course_batch_merge_data + lifecycle; rebuilt daily |
+| `silver.attendance_data` | API | One row per batch per class date; present/late/absent counts and attendance_pct |
 
 ---
 
@@ -101,14 +106,14 @@ Gold is the reporting layer. It contains SQL VIEWs that join and aggregate Silve
 **Gold views (built):**
 
 Course / enrollment views (`gold/webhook/gold_views.sql`):
-- `gold.course_summary` — per course-batch: enrollment counts, lifecycle dates, classification
-- `gold.learner_summary` — new vs returning learners per course
-- `gold.course_type_summary`, `gold.launch_type_summary`, `gold.subject_summary`
-- `gold.learning_model_summary`, `gold.term_summary`, `gold.funnel_summary`, `gold.sss_domain_summary`
+- `gold.course` — per course-batch: enrollment counts, lifecycle dates, classification
+- `gold.learner` — new vs returning learners per course
+- `gold.course_type`, `gold.launch_type`, `gold.subject`
+- `gold.learning_model`, `gold.term`, `gold.funnel`, `gold.sss_domain`
 
 Attendance views (`gold/api/attendance_views.sql`):
-- `gold.batch_attendance_summary` — per-batch: avg attendance %, first/last class counts
-- `gold.bundle_attendance_summary` — aggregated to course level
+- `gold.batch_attendance` — per-batch: avg attendance %, first/last class counts
+- `gold.bundle_attendance` — aggregated to course level
 - `gold.attendance_by_year` — year-by-year attendance trends
 - `gold.first_vs_last_class` — drop-off analysis per batch
 

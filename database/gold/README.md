@@ -1,59 +1,36 @@
-# database/gold/
+# Gold Layer: Reporting Views
 
-Gold is the reporting layer. It contains SQL VIEWs that join and aggregate Silver tables into shapes that Power BI consumes directly. Gold views contain no new data — everything comes from Silver. Views are always fresh and require no ETL scheduling.
+Welcome to the **Gold Layer**! This is the final stage of our data journey. 
 
----
+In this folder, we have SQL scripts that create **Views**. You can think of a View as a "Saved Report" or a "Virtual Table". Instead of writing long, complicated queries every time we want to see course performance or student attendance, we save those queries here so we can use them easily in tools like Power BI.
 
-## Subfolders
+## What's in here?
 
-| Folder | Views | Power BI use |
-|---|---|---|
-| `webhook/` | Course and enrollment analytics views | Course catalogue, learner breakdown, term/funnel/SSS dashboards |
-| `api/` | Attendance analytics views | Batch attendance trends, first vs last class drop-off |
+1.  **`course_views.sql`**: 
+    *   Creates views that summarize course information.
+    *   Tells us things like: "How many students are in each course?", "Which courses are the most popular?", and "Are students new or returning?"
+2.  **`attendance_views.sql`**: 
+    *   Creates views that focus on class attendance.
+    *   Tells us things like: "What is the average attendance for a batch?" and "Are students dropping off after the first class?"
 
----
+## Why do we use Views?
 
-## webhook/
+*   **Simplicity**: They hide the messy details of joining multiple tables.
+*   **Consistency**: Everyone uses the same definition for "Total Enrollments" or "Average Attendance".
+*   **Security**: We automatically filter out staff emails (like anyone with `@vyoma`) so our reports only show real student data.
 
-**File**: `gold_views.sql`
+## Common Errors & Solutions
 
-Nine views built from `silver.course_metadata`, `silver.transactions`, `silver.course_lifecycle`:
+| Error Message | What it means | How to fix it |
+| :--- | :--- | :--- |
+| `relation "silver.transactions" does not exist` | The View is trying to find a table in the Silver layer that hasn't been created yet. | Run the scripts in the `database/silver` folder first, or use `run_all.sql`. |
+| `column "..." does not exist` | A column name in the Silver table was changed or is missing. | Check the Silver table definition and update the View script to match the new name. |
+| `permission denied for schema gold` | Your database user doesn't have the right to create things in the Gold folder. | Ask your database administrator for "CREATE" permissions on the `gold` schema. |
+| `view ... is not a table` | You are trying to delete or update data directly in a View. | You cannot change data in a View. You must change the data in the original tables (Bronze/Silver). |
 
-| View | Description |
-|---|---|
-| `gold.course_summary` | One row per course-batch: all classification dimensions + enrollment counts (total / live webhook / historical CSV) |
-| `gold.learner_summary` | New vs returning learners per course (new = first-ever enrollment, returning = enrolled before) |
-| `gold.course_type_summary` | Enrollment counts grouped by course type and status |
-| `gold.launch_type_summary` | Enrollment counts grouped by launch type (Repeat / Reopen / Relaunch) |
-| `gold.subject_summary` | Enrollment and course counts by academic subject |
-| `gold.learning_model_summary` | Vyoma's pyramid: Bhashadhyayanam / Granthadhyayanam / Shastradhyayanam / Viniyoga |
-| `gold.term_summary` | New and returning learners grouped by term length (Very Short / Short / Mid / Long) |
-| `gold.funnel_summary` | New and returning learners grouped by position in funnel |
-| `gold.sss_domain_summary` | Enrollment counts in the Samskrta / Samskara / Samskriti Venn diagram |
-
-All views filter out Vyoma staff rows using `WHERE email NOT LIKE '%@vyoma%'`.
-
----
-
-## api/
-
-**File**: `attendance_views.sql`
-
-Four views built from `silver.class_attendance`, `silver.course_metadata`, `silver.course_batches`:
-
-| View | Description |
-|---|---|
-| `gold.batch_attendance_summary` | One row per batch: avg attendance %, total classes held, first/last class present counts |
-| `gold.bundle_attendance_summary` | One row per course bundle: aggregated across all batches |
-| `gold.attendance_by_year` | Attendance metrics aggregated by calendar year |
-| `gold.first_vs_last_class` | Drop-off analysis: first class attendance vs last class attendance per batch |
-
----
-
-## Why Views Instead of Tables?
-
-Gold uses SQL VIEWs rather than physical ETL tables because:
-- All data already exists in Silver in a clean, typed form
-- VIEWs are always fresh — no ETL job needed to keep them in sync
-- Any number in a Power BI dashboard can be traced directly back to Silver
-- At current data volumes (93K users, 424K transactions), live queries against Silver are fast enough
+## Beginner Tip
+If you want to see the results of a view, just run:
+```sql
+SELECT * FROM gold.course LIMIT 10;
+```
+It's just like querying a normal table!

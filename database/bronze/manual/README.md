@@ -1,61 +1,23 @@
-# database/bronze/manual/
+# Bronze Layer: Manual Data
 
-Tables loaded once from CSV exports taken from Edmingle's admin console and the course operations MIS tracker. These were the historical backfill performed before the webhook and API pipelines were operational. Do not re-run the migration scripts unless setting up a fresh database.
+## What is this?
+The **Manual** folder in the Bronze layer holds data that is uploaded by a person, usually from **CSV files** (like Excel spreadsheets). 
 
----
+This includes things that aren't easily available through the API, such as student export lists or custom course tracking sheets.
 
-## studentexport_raw.sql
+## Why do we need it?
+Not all data comes to us automatically. Sometimes we have to manually export information from Edmingle or other tools. This folder gives that manual data a home in our database so it can be combined with our automatic data.
 
-**Table**: `bronze.studentexport_raw`
+## How it works (Step-by-Step)
+1. **Export:** A person downloads a CSV file from Edmingle (like "Student Export").
+2. **Upload:** A Python script reads that CSV file.
+3. **Load:** This SQL script creates a "Raw" table in the `bronze` schema.
+4. **Result:** The manual spreadsheet data is now safely stored in our database.
 
-Verbatim copy of `studentexport.csv`. Every column from the CSV is stored as TEXT to avoid data loss during import. 116,000+ rows.
+## Common Errors
 
-**Unique key**: `source_row` (0-based row index — prevents duplicate imports)
-
-Contains all student profile fields: name, email, registration number, phone, date of birth, parent details, address, city, state, Vyoma custom fields (why they study Sanskrit, persona, objective, teaching experience, etc.), social media URLs.
-
-Loaded by `scripts/migrations/csv_load_bronze.py`. Promoted to `silver.users` by `scripts/migrations/csv_backfill_transactions.py`.
-
----
-
-## student_courses_enrolled_raw.sql
-
-**Table**: `bronze.student_courses_enrolled_raw`
-
-Verbatim copy of `studentCoursesEnrolled.csv`. 478,000+ enrollment records covering all historical course enrollments before the webhook pipeline was live.
-
-**Unique key**: `source_row`
-
-Key columns: `user_id`, `name`, `email`, `class_id` (batch identifier), `master_batch_id`, `bundle_id`, `batch_status`, `cu_status`, `cu_state`, `start_date`, `end_date`, historical attendance columns (`present`, `absent`, `late`, `excused`, `total_classes`).
-
-Loaded by `scripts/migrations/csv_load_bronze.py`. Promoted to `silver.transactions` by `scripts/migrations/csv_backfill_transactions.py`.
-
----
-
-## unresolved_students_raw.sql
-
-**Table**: `bronze.unresolved_students_raw`
-
-Students from `studentexport.csv` whose email address could not be matched to any Edmingle `user_id` at the time of the backfill. These ~22,834 students are real people with historical enrollment records, preserved here for potential future matching (e.g., if Edmingle provides a user export with IDs joinable by email).
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | SERIAL | Auto-increment row ID |
-| `source_row` | INTEGER | Row index from the original CSV |
-| `email` | TEXT | The email address that could not be resolved |
-| `raw_row` | JSONB | The complete original CSV row as JSON |
-| `inserted_at` | TIMESTAMPTZ | When this row was inserted |
-
----
-
-## course_lifecycle_raw.sql
-
-**Table**: `bronze.course_lifecycle_raw`
-
-Raw copy of the "Elearning MIS Merged Tracker — Course Lifecycle" spreadsheet. Contains 107 columns tracking every operational milestone of each course batch: launch date, first/last class dates, attendance rates, assessment dates, certification counts, ratings, and YouTube/content production status.
-
-**Unique key**: `source_row`
-
-This table is the source for `silver.course_lifecycle` which powers the `gold.course_summary` view (fields like `first_class_date`, `last_class_date`, `avg_attendance`, `total_certified`, `overall_rating`).
-
-Loaded by `scripts/migrations/csv_load_course_bronze.py`. Promoted to `silver.course_lifecycle` by `scripts/migrations/csv_transform_course_silver.py`.
+| Error | What it means | How to fix it |
+| :--- | :--- | :--- |
+| **Missing Columns** | The CSV file doesn't have the columns the script expected. | Check if the CSV was exported correctly and hasn't been edited. |
+| **Encoding Error** | The computer is having trouble reading special characters. | Save the CSV file as "CSV UTF-8 (Comma delimited)" in Excel. |
+| **Invalid Date Format** | A date in the spreadsheet looks weird (e.g., 13/13/2024). | Fix the date format in the spreadsheet before uploading. |

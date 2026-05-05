@@ -131,7 +131,7 @@ curl http://localhost:5000/status
 python api_scripts/fetch_attendance.py
 ```
 
-Pulls yesterday's attendance by default. Calls Edmingle's `report_type=55` endpoint and stores data in `bronze.attendance_raw` → `silver.class_attendance`.
+Pulls yesterday's attendance by default. Calls Edmingle's `report_type=55` endpoint and stores data in `bronze.attendance_raw` → `silver.attendance_data`.
 
 ---
 

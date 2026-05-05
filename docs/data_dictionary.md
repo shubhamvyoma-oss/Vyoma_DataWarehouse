@@ -316,27 +316,86 @@ One row per certificate issued to a student.
 
 ---
 
-## silver.course_metadata
+## silver.course_meta_data (Master Table)
 
-One row per course bundle. Populated daily by `fetch_course_catalogue.py`. Upsert key: `bundle_id`.
+This is the "Master" course table that joins everything together. It contains 65 columns covering course details, schedules, attendance, and performance metrics. Power BI reads directly from this table.
 
 | Column | Type | Description |
-|---|---|---|
-| `bundle_id` | BIGINT | Edmingle bundle identifier |
-| `course_name` | TEXT | Human-readable course name |
-| `course_type` | TEXT | Live / Recorded / Hybrid |
-| `status` | TEXT | published / unpublished / archived |
-| `subject` | TEXT | Academic subject area |
-| `term_of_course` | TEXT | Very Short / Short / Mid / Long |
-| `position_in_funnel` | TEXT | Bottom / Lower Middle / Middle / Upper Middle / Top |
-| `adhyayanam_category` | TEXT | Bhashadhyayanam / Granthadhyayanam / Shastradhyayanam |
-| `sss_category` | TEXT | Samskrta / Samskara / Samskriti |
-| `viniyoga` | TEXT | True / False |
-| `division` | TEXT | Organisational division |
+| :--- | :--- | :--- |
+| `bundle_id` | BIGINT | Unique ID for the course bundle from Edmingle. |
+| `course_name` | TEXT | Official name of the course. |
+| `batch_id` | BIGINT | Unique ID for the specific batch from Edmingle. |
+| `start_date` | TIMESTAMPTZ | Scheduled start date of the batch. |
+| `end_date` | TIMESTAMPTZ | Scheduled end date of the batch. |
+| `admitted_students` | INTEGER | Number of students admitted (from MIS tracker). |
+| `num_students` | INTEGER | Current number of students enrolled in Edmingle. |
+| `tutors` | TEXT | Names of the teachers. |
+| `tutor_ids` | TEXT | ID numbers of the teachers. |
+| `course_ids` | TEXT | IDs of the sub-courses in this bundle. |
+| `subject` | TEXT | The main subject (e.g., Sanskrit). |
+| `level` | TEXT | Difficulty level (Beginner, Advanced). |
+| `language` | TEXT | Language of instruction. |
+| `texts` | TEXT | Study materials used. |
+| `type` | TEXT | Course type (Live, Recorded). |
+| `course_division` | TEXT | Internal division name. |
+| `certificate` | TEXT | Whether a certificate is issued. |
+| `course_sponsor` | TEXT | Name of the sponsor. |
+| `status` | TEXT | Current status (Active, Completed). |
+| `number_of_lectures` | TEXT | Total planned lectures. |
+| `duration` | TEXT | Course duration in months/weeks. |
+| `personas` | TEXT | Target audience groups. |
+| `sss_category` | TEXT | SSS internal classification. |
+| `adhyayanam_category` | TEXT | Adhyayanam internal classification. |
+| `term_of_course` | TEXT | The academic term. |
+| `position_in_funnel` | TEXT | Stage in the marketing funnel. |
+| `classes_per_week` | TEXT | Number of classes held each week. |
+| `class_days` | TEXT | Days of the week classes are held. |
+| `class_timings` | TEXT | Class timing in IST. |
+| `additional_teacher` | TEXT | Names and links for other teachers. |
+| `ela` | TEXT | Early Learning Assessment status. |
+| `employee_id` | TEXT | ID of the employee managing the course. |
+| `panelists` | TEXT | List of panelists for sessions. |
+| `launch_date` | DATE | Official course launch date. |
+| `enrollments_after_launch` | INTEGER | Enrollment count one day after launch. |
+| `first_class_date` | DATE | Date of the very first class. |
+| `enrollments_on_first_class` | INTEGER | Enrollments on the first class day. |
+| `first_class_attendance` | INTEGER | Attendance count for first class. |
+| `second_class_attendance` | INTEGER | Attendance count for second class. |
+| `last_class_date` | DATE | Date of the last/valedictory class. |
+| `enrollments_on_last_day` | INTEGER | Enrollments on the final class day. |
+| `last_class_attendance` | INTEGER | Attendance count for last class. |
+| `total_classes_held` | INTEGER | Actual number of sessions conducted. |
+| `total_class_hours` | NUMERIC | Total teaching hours. |
+| `avg_attendance` | NUMERIC | Average attendance across all classes. |
+| `assessment_type` | TEXT | Type of assessment (Exam, Quiz). |
+| `assessment_start_date` | DATE | Start date of final exams. |
+| `assessment_end_date` | DATE | End date of final exams. |
+| `total_assessment_attendees` | INTEGER | Number of students who took the exam. |
+| `total_certified` | INTEGER | Number of students who passed and were certified. |
+| `cert_vs_initial_enroll` | NUMERIC | % Ratio: Certified / Initial Enrollments. |
+| `cert_vs_end_enroll` | NUMERIC | % Ratio: Certified / Final Enrollments. |
+| `cert_vs_first_class_attend` | NUMERIC | % Ratio: Certified / First Class Attendees. |
+| `cert_vs_avg_attend` | NUMERIC | % Ratio: Certified / Average Attendees. |
+| `first_class_attend_vs_initial` | NUMERIC | % Ratio: First Class Attend / Initial Enroll. |
+| `first_class_attend_vs_last` | NUMERIC | % Ratio: First Class Attend / Last Class Attend. |
+| `pass_pct_cert_vs_attendees` | NUMERIC | % Ratio: Certified / Assessment Attendees. |
+| `pass_pct_students_vs_cert` | NUMERIC | % Ratio: Final Count / Certified. |
+| `overall_rating` | NUMERIC | Average student rating (1-5). |
+| `avg_rating_ease` | NUMERIC | Rating for ease of attending webinars. |
+| `avg_rating_quality` | NUMERIC | Rating for content quality. |
+| `avg_teacher_rating` | NUMERIC | Rating for the teacher. |
+| `avg_rating_access` | NUMERIC | Rating for website ease of use. |
+| `avg_ela_rating` | NUMERIC | Teacher's rating for ELA. |
+| `avg_content_support_rating` | NUMERIC | Teacher's rating for content support. |
+| `is_latest_batch` | SMALLINT | 1 if this is the newest batch. |
+| `include_in_course_count` | SMALLINT | 1 if this is a primary course. |
+| `has_batch` | SMALLINT | 1 if a batch exists in the system. |
+| `created_at` | TIMESTAMPTZ | Record creation timestamp in IST. |
+
 
 ---
 
-## silver.course_batches
+## silver.batches_data
 
 One row per batch. Populated daily by `fetch_course_batches.py`. Upsert key: `batch_id`.
 
@@ -362,25 +421,62 @@ Key columns: `course_id`, `course_name`, `type_of_launch`, `first_class_date`, `
 
 ---
 
-## silver.course_master
+## silver.course_batch_merge
 
 Denormalised flat table joining course_metadata + course_batches + course_lifecycle. One row per batch. Fully rebuilt (TRUNCATE + INSERT) on every `run_course_pipeline.py` run. Power BI reads directly from this table.
+| Column | Type | Description |
+|---|---|---|
+Bundle id
+Course Name
+batch_id
+batch_name
+Num Students (change to Bundle_enrolment _Count)
+Tutors
+Tutord Ids
+start_date
+end_date
+admitted_students (change to batch_enrollment_count)
+Course Ids
+Subject
+Level
+Language
+Texts
+Type
+Course Division
+Certificate
+Course Sponsor
+Status
+Number of Lectures
+Duration
+Personas
+Computer Based Assessment
+SSS Category
+Adhyayanam Category
+Term of Course
+Position in Funnel
+
 
 ---
 
-## silver.class_attendance
+## silver.attendance_data
 
 One row per batch per class date. Populated daily by `fetch_attendance.py`. Upsert key: `(batch_id, class_date)`.
 
 | Column | Type | Description |
 |---|---|---|
-| `batch_id` | BIGINT | Batch identifier |
-| `bundle_id` | BIGINT | Parent bundle |
-| `class_date` | DATE | Date of the class |
-| `class_number` | INTEGER | Sequential class number within the batch (1 = first class) |
-| `present_count` | INTEGER | Students marked P (Present) |
-| `late_count` | INTEGER | Students marked L (Late) — counted as attended in attendance_pct |
-| `absent_count` | INTEGER | Students marked A (Absent) |
-| `total_enrolled` | INTEGER | Total students enrolled in the batch |
-| `attendance_pct` | NUMERIC(5,2) | (present + late) / (present + late + absent) * 100 |
-| `pull_date` | DATE | Date on which this row was last updated |
+batch_id
+batch_name
+class_id
+bundle_id
+bundle_name
+class_date
+present_count
+absent_count
+total_records
+attendance_pct
+attendance_id
+teacher_id
+teacher_name
+class_duration
+pull_date
+loaded_at
