@@ -1,4 +1,4 @@
-# Manual Data Load - Beginner's Guide
+# Manual Data Load
 
 ## What does this folder do?
 This folder contains simple Python scripts that take data from **CSV files** (which are like Excel spreadsheets) and put them into our **Database**. 
