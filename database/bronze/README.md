@@ -1,4 +1,4 @@
-# Bronze Layer: The Digital Filing Cabinet
+# Bronze Layer
 
 Welcome to the **Bronze Layer** of our data warehouse! 
 
