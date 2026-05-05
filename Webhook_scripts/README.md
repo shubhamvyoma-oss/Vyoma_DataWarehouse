@@ -1,4 +1,4 @@
-# Webhook Ingestion - Beginner's Guide
+# Webhook Ingestion
 
 ## What does this do?
 This folder contains scripts that help our computer "listen" to messages from another system called **Edmingle**. 
