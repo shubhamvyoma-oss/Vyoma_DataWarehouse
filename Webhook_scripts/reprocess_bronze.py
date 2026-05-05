@@ -411,7 +411,7 @@ def route_course(conn, event_id, event_type, data, event_timestamp):
     # We prepare and run the SQL insert
     cursor = conn.cursor()
     sql = """
-        INSERT INTO silver.courses (
+        INSERT INTO silver.course_completion (
             event_id, event_type, user_id, bundle_id, completed_at_ist, received_at
         ) VALUES (
             %s, %s, %s, %s, unix_to_ist(%s), NOW() AT TIME ZONE 'Asia/Kolkata'

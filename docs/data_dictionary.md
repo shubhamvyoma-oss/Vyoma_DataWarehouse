@@ -268,7 +268,7 @@ One row per assessment event. There are four event types: `test_submitted`, `tes
 
 ---
 
-## silver.courses
+## silver.course_completion
 
 One row per course completion event. A student completing a course triggers a `course.user_course_completed` event.
 

@@ -318,7 +318,7 @@ def run_all_the_tests():
     # We make a list of the tables we expect to see data in
     tables_to_verify = [
         "silver.users", "silver.transactions", "silver.sessions",
-        "silver.assessments", "silver.courses", "silver.announcements",
+        "silver.assessments", "silver.course_completion", "silver.announcements",
         "silver.certificates"
     ]
     

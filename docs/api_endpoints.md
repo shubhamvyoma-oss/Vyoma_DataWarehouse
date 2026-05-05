@@ -69,7 +69,7 @@ HTTP 200 always.
 | `assessments.test_evaluated` | `silver.assessments` |
 | `assessments.exercise_submitted` | `silver.assessments` |
 | `assessments.exercise_evaluated` | `silver.assessments` |
-| `course.user_course_completed` | `silver.courses` |
+| `course.user_course_completed` | `silver.course_completion` |
 | `announcement.announcement_created` | `silver.announcements` |
 | `certificate.certificate_issued` | `silver.certificates` |
 | `url.validate` | Bronze only (Edmingle health check ping) |

@@ -32,7 +32,7 @@ TABLES_TO_CHECK = [
     'silver.transactions',
     'silver.sessions',
     'silver.assessments',
-    'silver.courses',
+    'silver.course_completion',
     'silver.announcements',
     'silver.certificates',
 ]

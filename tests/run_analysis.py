@@ -114,7 +114,7 @@ def report_silver_health(database_cursor):
     # We print the subsection title
     print_subsection_title("Silver tables (Clean Data)")
     # We make a list of the silver tables
-    silver_tables = ["silver.users", "silver.transactions", "silver.sessions", "silver.courses"]
+    silver_tables = ["silver.users", "silver.transactions", "silver.sessions", "silver.course_completion"]
     # We loop through each table
     for table_name in silver_tables:
         # We count the rows for this table

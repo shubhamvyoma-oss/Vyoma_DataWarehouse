@@ -87,7 +87,7 @@ Silver is the cleaned, typed, and deduplicated store. Each row in a Silver table
 | `silver.transactions` | Webhook + CSV | One row per enrollment; upsert key is `(user_id, bundle_id, master_batch_id)` |
 | `silver.sessions` | Webhook | One row per live class instance; upsert key is `attendance_id` |
 | `silver.assessments` | Webhook | One row per assessment event; upsert key is `event_id` |
-| `silver.courses` | Webhook | One row per course completion; upsert key is `event_id` |
+| `silver.course_completion` | Webhook | One row per course completion; upsert key is `event_id` |
 | `silver.announcements` | Webhook | One row per announcement; raw JSONB stored |
 | `silver.certificates` | Webhook | One row per certificate issued; upsert key is `event_id` |
 | `silver.course_catalogue_data` | API | One row per bundle |

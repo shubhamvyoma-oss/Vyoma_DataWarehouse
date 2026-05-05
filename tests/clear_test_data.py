@@ -24,7 +24,7 @@ CLEAR_TARGETS = [
      "email LIKE '%test%' OR email LIKE '%load%' OR user_id >= 99990000"),
     ("silver.assessments",
      "user_id >= 99990000"),
-    ("silver.courses",
+    ("silver.course_completion",
      "user_id >= 99990000"),
     ("silver.certificates",
      "user_id >= 99990000"),
