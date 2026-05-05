@@ -1,16 +1,16 @@
-# 🗄️ Database Setup - Beginner's Guide
+# Database Setup
 
 Welcome! This folder contains all the tools needed to build our "Data Warehouse." 
 
-## ❓ What does this folder do?
+##  What does this folder do?
 This folder builds the digital "filing cabinet" for our school's data. It creates organized tables (which look like spreadsheets) where we can store student names, attendance records, course details, and more.
 
-## 🌟 Why do we need it?
+## Why do we need it?
 1.  **Organization**: Instead of having data scattered in different files, we put it all in one safe, central place.
 2.  **Speed**: It makes finding information (like "Who missed class today?") very fast, even with thousands of records.
 3.  **Cleanliness**: It helps us fix messy data (like misspelled names or empty records) so our final reports are always accurate.
 
-## 🏗️ How it works (The System)
+## How it works (The System)
 
 Here is a simple diagram of how the setup works:
 
@@ -45,7 +45,7 @@ We use a 3-step cleaning process called the "Medallion Architecture":
 4.  **Gold Phase (Final Stage)**: We create "ready-to-use" views. These are special tables designed specifically for making charts and reports.
 5.  **Verification**: The script runs a final check to make sure every table was built correctly and is ready for use.
 
-## 🚀 How to run it
+##  How to run it
 You only need to run one single script to do everything!
 
 1.  **Open your terminal** (this is the Command Prompt on Windows or Terminal on Mac).
@@ -56,12 +56,12 @@ You only need to run one single script to do everything!
     ```
 4.  **Watch the progress**: The script will list each file it runs. When it finishes, it will say "INITIALIZATION COMPLETE".
 
-## ✅ What to check after running
+## What to check after running
 *   **Success Messages**: You should see the word "SUCCESS" next to every file name on your screen.
 *   **Final Message**: Look for the "INITIALIZATION COMPLETE" message at the very bottom.
 *   **Database Tables**: If you use a tool like **pgAdmin**, you should now see new tables inside the `bronze`, `silver`, and `gold` schemas.
 
-## ❌ Common Errors (How to fix them)
+## Common Errors (How to fix them)
 
 | Error Message | What it means | How to fix it |
 | :--- | :--- | :--- |
