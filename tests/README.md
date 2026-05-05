@@ -1,4 +1,4 @@
-# Tests Directory - A Beginner's Guide
+# Tests Directory
 
 Welcome! This folder contains "Test Scripts." Think of these as a team of tiny robots that check if our data factory is working correctly.
 
