@@ -1,4 +1,4 @@
-# Setup: The Kitchen Build
+# Setup
 
 This folder contains the scripts needed to build the structure of our database.
 
