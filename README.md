@@ -50,6 +50,8 @@ Here is a simple map of how information travels from the Edmingle website into o
 
 ## The Folder Structure (The Order of Work)
 
+
+
 We have organized our folders to show the logical flow of data:
 
 - **`database/`**: This is where the digital filing cabinet (the database) is built and stored.

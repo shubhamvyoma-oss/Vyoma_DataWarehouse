@@ -2,8 +2,7 @@
 
 ## What This System Does and Why It Exists
 
-Vyoma Samskrta Pathasala (sanskritfromhome.org) runs its online courses through a platform called Edmingle. Edmingle tracks students, enrollments, live sessions, assessments, and certificates — but it does not provide a way to run custom reports or build dashboards. This pipeline solves that problem: it collects all Edmingle data automatically, stores it in a structured PostgreSQL database, and makes it available for Power BI dashboards. The goal is to give Vyoma a clear picture of how many students are enrolled, how many attend sessions, how many complete courses, and where students drop off.
-
+Vyoma Samskrta Pathasala (sanskritfromhome.org) runs its online courses through a platform called Edmingle. Edmingle tracks students, enrollments, live sessions, assessments, and certificates — but it does not provide a way to run custom reports or build dashboards. This pipeline solves that problem: it collects all Edmingle data automatically, stores it in a structured PostgreSQL database, and makes it available for Power BI dashboards. The goal is to give Vyoma a clear picture of students behavior and course performance.
 ---
 
 ## Data Flow
