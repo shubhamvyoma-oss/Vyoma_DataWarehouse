@@ -11,7 +11,9 @@ Vyoma Samskrta Pathasala (sanskritfromhome.org) runs its online courses through 
 ```
 Edmingle LMS
      │
-     ├── Webhooks (real-time) ──────────→ ingestion/webhook_receiver.py
+     ├── Webhooks (real-time) ──────────→ Webhook_scripts/
+     │                                              │
+     |                                     webhook_receiver.py     
      │                                              │
      │                                    bronze.webhook_events
      │                                              │
@@ -32,9 +34,8 @@ Edmingle LMS
      │                                    silver.attendance_data
      │                                    silver.course_catalogue
      │                                    silver.batches_Data
-     │                                    silver.course_batch_merge_data
-     |                                    silver.course_catalogue_data
-     |                                    silver.course_lifecycle
+     │                                    silver.course_batch_merge_data (course_catalogue + batches_Data)
+     |                                    silver.course_metadata (course_batch_merge_data + course_lifecycle)
      │
      └── CSV (one-time historical backfill) ──→ scripts/migrations/
                                                         │
@@ -45,7 +46,7 @@ Edmingle LMS
                                               silver.users
                                               silver.transactions
 
-silver.* tables ──→ gold.* views ──→ Power BI dashboards
+bronze.*table ──→  silver.* tables ──→ gold.* views ──→ Power BI dashboards
 ```
 
 ---
@@ -63,9 +64,9 @@ Bronze is the raw data store. Every event or CSV row is saved here exactly as it
 | `bronze.studentexport_raw` | CSV import | Raw copy of the studentexport.csv historical file |
 | `bronze.student_courses_enrolled_raw` | CSV import | Raw copy of the studentCoursesEnrolled.csv historical file |
 | `bronze.unresolved_students_raw` | CSV import | Students from CSV whose email could not be matched to an Edmingle user_id |
+| `bronze.course_lifecycle_raw` | CSV import | Course operations MIS tracker (107 columns per batch) |
 | `bronze.course_catalogue_raw` | API | All course bundles with classification fields |
 | `bronze.course_batches_raw` | API | All batch records (nested under bundles, flattened) |
-| `bronze.course_lifecycle_raw` | CSV import | Course operations MIS tracker (107 columns per batch) |
 | `bronze.attendance_raw` | API | One row per student per class session (attendance status P/L/A/-) |
 
 ---
@@ -93,8 +94,7 @@ Silver is the cleaned, typed, and deduplicated store. Each row in a Silver table
 | `silver.course_catalogue_data` | API | One row per bundle |
 | `silver.batches_data` | API | One row per batch; typed dates, tutor, enrolled count |
 | `silver.course_batch_merge_data` | API | One row per course bundle; joining batches_Data + course_catalogue_data |
-| `silver.course_lifecycle` | CSV import | One row per batch from the MIS tracker; lifecycle metrics |
-| `silver.course_catalogue` | API | Flat table joining course_batch_merge_data + lifecycle; rebuilt daily |
+| `silver.course_metadata` | API | Flat table joining course_batch_merge_data + lifecycle; rebuilt /weekly/monthly|
 | `silver.attendance_data` | API | One row per batch per class date; present/late/absent counts and attendance_pct |
 
 ---
@@ -128,3 +128,4 @@ Attendance views (`gold/api/attendance_views.sql`):
 | DB connection pooling | psycopg2 ThreadedConnectionPool (min 2, max 20) |
 | Dashboards | Power BI (live connection to gold.* views) |
 | Hosting | VPS with systemd keeping the receiver running |
+

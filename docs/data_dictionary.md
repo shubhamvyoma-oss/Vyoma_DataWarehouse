@@ -3,6 +3,126 @@
 Every table in the database, with every column explained.
 
 ---
+## File Structure
+
+Vyoma_DataWarehouse/
+├─ analytics/
+│  ├─ build_courses.py
+│  ├─ README.md
+│  └─ run_analysis.py
+├─ api_collectors/
+│  |
+│  ├─ attendance.md
+│  ├─ attendance.py
+│  ├─ course_batches.md
+│  ├─ course_batches.py
+│  ├─ course_catalogue.md
+│  ├─ course_catalogue.py
+│  ├─ local_storage_helper.py
+│  ├─ README.md
+│  ├─ run_course_pipeline.md
+│  └─ run_course_pipeline.py
+├─ CSV files/
+│  └─ README.md
+├─ database/
+│  ├─ bronze/
+│  │  ├─ api/
+│  │  │  ├─ attendance_raw.sql
+│  │  │  ├─ batches_data_raw.sql
+│  │  │  ├─ course_catalogue_data_raw.sql
+│  │  │  └─ README.md
+│  │  ├─ manual/
+│  │  │  ├─ course_lifecycle_raw.sql
+│  │  │  ├─ README.md
+│  │  │  ├─ student_courses_enrolled_raw.sql
+│  │  │  ├─ studentexport_raw.sql
+│  │  │  └─ unresolved_students_raw.sql
+│  │  ├─ webhook/
+│  │  │  ├─ failed_events.sql
+│  │  │  ├─ README.md
+│  │  │  └─ webhook_events.sql
+│  │  └─ README.md
+│  ├─ gold/
+│  │  ├─ api/
+│  │  │  ├─ attendance_views.sql
+│  │  │  ├─ course_views.sql
+│  │  │  └─ README.md
+│  │  ├─ .gitkeep
+│  │  └─ README.md
+│  ├─ schemas/
+│  │  ├─ 01_create_schemas.sql
+│  │  └─ README.md
+│  ├─ setup/
+│  │  ├─ create_schemas.sql
+│  │  └─ README.md
+│  ├─ silver/
+│  │  ├─ api/
+│  │  │  ├─ attendance_data.sql
+│  │  │  ├─ batches_data.sql
+│  │  │  ├─ course_batch_merge.sql
+│  │  │  ├─ course_catalogue.sql
+│  │  │  ├─ course_metadeata.sql
+│  │  │  └─ README.md
+│  │  |
+│  │  ├─ webhook/
+│  │  │  ├─ announcements.sql
+│  │  │  ├─ assessments.sql
+│  │  │  ├─ certificates.sql
+│  │  │  ├─ README.md
+│  │  │  ├─ sessions.sql
+│  │  │  ├─ transactions.sql
+|  |  |  ├─ courses.sql
+│  │  │  └─ users.sql
+│  │  └─ README.md
+│  ├─ verification/
+│  │  ├─ check_data_quality.sql
+│  │  ├─ check_row_counts.sql
+│  │  └─ README.md
+│  ├─ README.md
+│  ├─ run_all.py
+│  └─ run_all.sql
+├─ docs/
+│  ├─ api_endpoints.md
+│  ├─ architecture.md
+│  ├─ data_dictionary.md
+│  ├─ decisions.md
+│  └─ runbook.md
+├─ logs/
+│  ├─ attendance_backfill.err
+│  ├─ attendance_backfill.log.err
+│  └─ README.md
+├─ manual_data_load/
+│  ├─ backfill_transactions.py
+│  ├─ csv_backfill_transactions.py
+│  ├─ csv_load_bronze.py
+│  ├─ csv_load_course_bronze.py
+│  ├─ csv_transform_course_silver.py
+│  ├─ load_courses_csv.py
+│  ├─ load_students_csv.py
+│  ├─ README.md
+│  └─ transform_courses_silver.py
+├─ pdf/
+│  ├─ Edmingle API_01.pdf
+│  ├─ Edmingle API_02.pdf
+│  ├─ README.md
+│  └─ vyoma_executive_report.pdf
+├─ tests/
+│  ├─ check_db_counts.py
+│  ├─ clear_test_data.py
+│  ├─ README.md
+│  ├─ run_analysis.py
+│  ├─ test_all_events.py
+│  ├─ test_db_unavailability.py
+│  ├─ test_pipeline_e2e.py
+│  └─ test_webhook_send.py
+├─ Webhook_scripts/
+│  ├─ README.md
+│  ├─ reprocess_bronze.py
+│  └─ webhook_receiver.py
+├─ .env.example
+├─ .gitignore
+└─ README.md
+
 
 ## bronze.webhook_events
 
@@ -149,6 +269,204 @@ Students from `studentexport.csv` whose email address could not be matched to an
 
 ---
 
+## bronze.course_lifecycle_tracker (Elearning_MIS_Merged_Tracker)
+
+| Column | Type | Description | Example |
+|--------|------|-------------|---------|
+| `Sl No` | INTEGER | Sequential row number in the tracker | `1`, `2`, `3` |
+| `Course Name` | TEXT | Full name of the course | `Learn to chant Sriman Narayaneeyam` |
+| `Course ID` | INTEGER | Edmingle bundle/course ID | `6495` |
+| `Batch Name` | TEXT | Name of the specific batch run | `Learn to chant Sriman Narayaneeyam` |
+| `Type of Launch` | TEXT | How the course was launched | `Past Webinar`, `Upcoming Webinar` |
+| `Status` | TEXT | Current lifecycle status of the course | `Completed`, `Ongoing`, `Upcoming` |
+| `Subject` | TEXT | Subject area of the course | `Stotra - Parayanam (Chanting)` |
+| `Position in Funnel` | TEXT | Marketing funnel position | `Top`, `Middle`, `Bottom` |
+| `Samskritadhyayana Model` | TEXT | Internal pedagogical classification | `Bhashadhyayanam`, `Vedadhyayanam` |
+| `Term of Course` | TEXT | Duration category | `Long`, `Short`, `Mid` |
+| `SSS Category` | TEXT | Internal content category | `SSS`, `Samskrta` |
+| `Persona` | TEXT | Comma-separated list of target student personas | `Professionals , Homemakers , Senior Citizens` |
+| `batch_id` | FLOAT | Edmingle batch ID (sparse — not always filled) | `1281` |
+| `New_1` | FLOAT | Unlabelled auxiliary column | *(usually null)* |
+| `New_2` | FLOAT | Unlabelled auxiliary column | *(usually null)* |
+| `No. of classes in a week` | INTEGER | Frequency of live sessions per week | `1`, `2` |
+| `Days of Classes` | TEXT | Which days of the week classes are held | `Saturday`, `Monday, Thursday` |
+| `Class Timings IST` | TEXT | Live session time window in IST | `8:00 PM to 9:00 PM` |
+| `Webinar Tool` | TEXT | Platform used for live sessions | `Zoom Webinar 1`, `Zoom Meeting` |
+| `Course Finalisation date` | TEXT | Date when course content was locked | `5/10/2023` |
+| `Course Launch Date` | TEXT | Date the course was made public | `3/15/2023`, `Unavailable` |
+| `First Class Date` | TEXT | Date of the first live session | `4/4/2020` |
+| `Last Class and Valedictory Date` | TEXT | Date of the final class | `8/12/2023` |
+| `Primary Teacher (Name + sfh Link)` | TEXT | Name and profile link of the lead teacher | `Shri. (Dr.) Shankararama Sharma` |
+| `Primary Teacher ID` | INTEGER | Edmingle user ID of the primary teacher | `18984715` |
+| `Additional Teacher (Name + Link)` | FLOAT | Name and link of a supporting teacher, if any | *(usually null)* |
+| `Additional Teacher ID` | FLOAT | Edmingle user ID of the additional teacher | *(usually null)* |
+| `ELA` | FLOAT | Name of the E-Learning Associate assigned | *(usually null)* |
+| `Employee ID` | TEXT | Internal employee ID of the ELA | *(usually null)* |
+| `Panelists` | FLOAT | Panelists for the course, if applicable | *(usually null)* |
+| `Volunteer for class upload` | TEXT | Name of volunteer handling video uploads | `Priya` |
+| `Volunteer for Timestamping` | TEXT | Name of volunteer handling YouTube timestamps | `Sharmila` |
+| `Enrolments on next day of launch` | TEXT | Enrollment count one day after course went live | `450`, `Unavailable` |
+| `Enrolments on the day of first class` | FLOAT | Enrollment count on the day of first session | `620.0` |
+| `First Class Attendance` | INTEGER | Number of students who attended the first class | `700` |
+| `Second Class Attendance` | FLOAT | Number of students who attended the second class | `580.0` |
+| `Enrolments on last day` | TEXT | Enrollment count on the last class day | `3,304` |
+| `Last Class Attendance` | INTEGER | Number of students who attended the final class | `259` |
+| `Total no of classes held` | FLOAT | Total number of live sessions conducted | `215.0` |
+| `Total Hours of classes` | INTEGER | Total hours of instruction delivered | `215` |
+| `Average Attendance of all classes` | FLOAT | Mean attendance across all sessions | `169.96` |
+| `Average Attendance in last 5 classes` | FLOAT | Mean attendance in the final 5 sessions | `199.66` |
+| `Enrollment as on 31 Mar 2025` | FLOAT | Point-in-time enrollment snapshot | *(sparse)* |
+| `Enrollment as on 31 Aug 2025` | FLOAT | Point-in-time enrollment snapshot | *(sparse)* |
+| `Type of Assessment` | TEXT | Format of the end-of-course assessment | `Oral`, `Written`, `Online` |
+| `Date of Assessment Announcement mail sent` | TEXT | When students were notified of the assessment | `8/5/2023` |
+| `Assessment Start Date` | TEXT | First date students could take the assessment | `8/26/2023` |
+| `Assessment End Date` | TEXT | Last date students could take the assessment | `8/29/2023` |
+| `Total assessment Attendees` | INTEGER | Number of students who appeared for assessment | `225` |
+| `Judges for Oral Assessment` | FLOAT | Names of judges for oral assessments | *(usually null)* |
+| `Results announcement date` | TEXT | When results were published | `9/10/2023` |
+| `Total Students certified` | INTEGER | Number of students who passed and received certificates | `186` |
+| `Date of Certificates issued` | TEXT | When certificates were sent out | `9/20/2023` |
+| `Time given for course finaliastion and launch` | Days between finalisation and launch | At least 3–5 days |
+| `Time given for launch & first class` | Days between launch and first session | At least 15 days |
+| `Time given btw last class and feedack` | Days between last class and feedback request | Should not exceed 1 day |
+| `Time given btw Last Class & Assessment Announcement` | Days between last class and assessment notice | Should not exceed 3 days |
+| `Time given btw Assessment Announcement & Start date` | Days between announcement and assessment start | At least 15 days |
+| `Time gap given for Conducting Assessment & Teacher Satisfaction survey` | Days between assessment end and teacher survey | Should not exceed 7 days |
+| `Time gap given for Completion of Assessment & Results Announcement` | Days to announce results after assessment | Should not exceed 7 days |
+| `Time gap given for Results Announcement & Certificate issue` | Days between results and certificates | Should not exceed 15 days |
+| `Time given for Certificate issued & Close out Email date` | Days between certificates and close-out email | Should not exceed 3 days |
+| `Total Certified vs Initial Enrolments` | Certification rate vs. initial sign-ups |
+| `Total Certified vs Course-end enrolments` | Certification rate vs. final enrollment count |
+| `Total Certified vs First class Attendees` | Certification rate vs. first-class attendees |
+| `Total Certified vs Average Attendees` | Certifications relative to average live attendance |
+| `First Class attendance vs Initial enrolments` | Drop-off between enrolment and first class |
+| `First Class attendance vs Last Class attendance` | Attendance retention over the course duration |
+| `Pass Percentage (Total certified vs Total assessment attendees)` | Of those who took the exam, percentage who passed |
+| `Pass Percentage (Total students on last class vs Total certified)` | Certified students relative to last-class attendance |
+| `Date of Request for course Feedback to students` | TEXT | When the student feedback form was sent | `8/10/2023` |
+| `Date of Close out Email sent` | TEXT | When the final closure email was sent to students | `9/25/2023` |
+| `Total Number of Feedbacks received` | FLOAT | Count of feedback form submissions | `142.0` |
+| `Overall course rating` | FLOAT | Aggregate student rating out of 5 | `5.0` |
+| `Average Rating for Ease of attending live webinars` | FLOAT | Student rating for webinar accessibility | `4.23` |
+| `Average Rating for Quality of content and course materials` | FLOAT | Student rating for content quality | `4.49` |
+| `Average Teacher Rating` | FLOAT | Student rating for the teacher | `4.56` |
+| `Average Rating for Accessing course materials in the website` | FLOAT | Student rating for website usability | `4.47` |
+| `Average ELA Rating by teacher` | FLOAT | Teacher's rating of the ELA support | *(usually null)* |
+| `Average Content Support Rating by teacher` | FLOAT | Teacher's rating of content support | *(usually null)* |
+| `Overall course Rating by teacher` | FLOAT | Teacher's overall course rating | *(usually null)* |
+| `Hours worked by Teacher for the course` | FLOAT | Total hours logged by the primary teacher |
+| `Hours worked by ELA for the course` | FLOAT | Total hours logged by the ELA |
+| `Hours worked by Linguist Team for the course` | FLOAT | Total hours logged by linguist team |
+| `Average hours worked by Volunteers` | FLOAT | Average volunteer hours per course |
+| `Average hours worked by Judges for oral assessment` | FLOAT | Average judge hours for oral assessments |
+| `Drive Folder` | TEXT | Name/link of the Google Drive folder for this course |
+| `YouTube Playlist Name and link` | TEXT | YouTube playlist for course recordings |
+| `Clickup folder link` | TEXT | ClickUp task folder link for project management |
+| `Canva - Banner link` | TEXT | Canva link for the course banner |
+| `Feedback Form` | TEXT | Google Form link for student feedback |
+| `Feedback Form Responses sheet` | TEXT | Google Sheets link for feedback responses |
+| `Course Master` | FLOAT | Reference to course master document *(sparse)* |
+| `Attendance sheet download status` | Whether attendance data was downloaded |
+| `Status for filling in CSV sheet for Testimonials` | Testimonial CSV population status |
+| `Status for adding Testimonials on SFH` | Whether testimonials were published on the website |
+| `Playlist description added` | YouTube playlist description added |
+| `Video Title Standardised` | Whether video titles follow naming standards |
+| `Video Description standardised` | Whether video descriptions are standardized |
+| `Thumbnail images uploaded` | Whether thumbnails are uploaded to YouTube |
+| `Tags added` | Whether tags are added to YouTube videos |
+| `Monetization (Everything except during video)` | Monetization settings configured |
+| `Timestamping done` | Whether video timestamps are added |
+| `Starting and Ending video bits added` | Intro/outro clips added to videos |
+| `Endscreen links updated` | YouTube endscreen links configured |
+| `Cards updated` | YouTube cards updated |
+ 
+---
+ 
+## bronze.batches_data
+
+| Column | Type | Description | Example |
+|--------|------|-------------|---------|
+| `bundle_id` | INTEGER | Edmingle course bundle ID. Foreign key to `course_catalogue_data.Bundle id` and `bronze.student_courses_enrolled_raw.bundle_id` | `6340` |
+| `bundle_name` | TEXT | Name of the parent course bundle | `Siddhanta Kaumudi - Atmanepada Prakaranam` |
+| `batch_id` | INTEGER | Edmingle batch (class) ID. Foreign key to `bronze.student_courses_enrolled_raw.class_id` | `12443` |
+| `batch_name` | TEXT | Name of this specific batch | `Siddhanta Kaumudi - Atmanepada Prakaranam` |
+| `batch_status` | TEXT | Current status of the batch | `Active`, `Inactive`, `Completed` |
+| `start_date` | INTEGER | Batch start date as a Unix timestamp (seconds since epoch) | `1390435200` |
+| `start_date_converted` | TEXT | Human-readable start date in IST | `23-01-2014 05:30 AM IST` |
+| `end_date` | INTEGER | Batch end date as a Unix timestamp | `1392336000` |
+| `end_date_converted` | TEXT | Human-readable end date in IST | `14-02-2014 05:30 AM IST` |
+| `tutor_id` | INTEGER | Edmingle user ID of the assigned tutor. Foreign key to `bronze.webhook_events` teacher records | `18983595` |
+| `tutor_name` | TEXT | Name of the assigned tutor | `Dr. Venkatasubramanian P` |
+| `admitted_students` | INTEGER | Number of students admitted to this batch | `385` |
+ 
+---
+ 
+## bronze.course_catalogue
+
+| Column | Type | Description | Example |
+|--------|------|-------------|---------|
+| `Bundle id` | INTEGER | Edmingle course bundle ID. Primary key for this file. Foreign key to `batches_data.bundle_id` | `27432` |
+| `Course Name` | TEXT | Full display name of the course | `Samskritasri Pathamala 4` |
+| `Course Title Sanskrit` | TEXT | Course name in Devanagari script | `संस्कृतश्रीः पाठमाला - ४` |
+| `Pretty Name` | TEXT | URL slug used in the course page URL | `learn-basic-sanskrit-pathamala4` |
+| `Course URL` | TEXT | Full public URL of the course on sanskritfromhome.org | `https://www.sanskritfromhome.org/...` |
+| `Course List` | TEXT | Display name in course listing pages | `Samskritasri Pathamala 4` |
+| `Course Ids` | INTEGER | Internal course (class) IDs linked to this bundle | `45359` |
+| `Status` | TEXT | Publication status of the course | `Upcoming`, `Active`, `Completed` |
+| `Coming soon` | OBJECT | Whether the course is flagged as coming soon | `True`, `False`, `nan` |
+| `Whats new` | BOOLEAN | Whether this course is marked as new | `True`, `False` |
+| `Whats new poster` | TEXT | Promotional poster text for new courses | *(usually blank)* |
+| `Hide in Ongoing Webinar` | FLOAT | Flag to suppress from ongoing webinar listings | *(sparse)* |
+| `Course Ordering` | FLOAT | Manual ordering weight for display | *(sparse)* |
+| `Subject` | TEXT | Subject area of the course | `Language Practice`, `Vedic Chanting` |
+| `Level` | TEXT | Difficulty level | `Beginner`, `Intermediate`, `Advanced` |
+| `Language` | TEXT | Medium of instruction | `English`, `Hindi`, `Tamil` |
+| `Type` | TEXT | Delivery format | `Live Webinars`, `Self-Paced` |
+| `Course Division` | TEXT | Top-level content division | `Course`, `Learning Program` |
+| `Division` | TEXT | Sub-division classification | *(sparse)* |
+| `SSS Category` | TEXT | Internal SSS content category | `Samskrta`, `Veda`, `Shastra` |
+| `Adhyayanam Category` | TEXT | Internal learning model category | `Bhashadhyayanam`, `Vedadhyayanam` |
+| `Term of Course` | TEXT | Duration classification | `Short`, `Mid`, `Long` |
+| `Position in Funnel` | TEXT | Marketing funnel position | `Top`, `Middle`, `Lower Middle` |
+| `Examination` | FLOAT | Whether the course has an examination | *(sparse)* |
+| `Texts` | FLOAT | Primary texts studied in the course | *(sparse)* |
+| `Certificate` | OBJECT | Whether a certificate is awarded on completion | `True`, `False` |
+| `Target Audience` | TEXT | Intended audience for the course | `Students ,Age 15+` |
+| `Personas` | TEXT | Comma-separated list of target personas | `University Students,Professionals ,Homemakers` |
+| `Cost` | INTEGER | Course fee in INR (0 = free) | `0`, `500` |
+| `Is Online Package` | INTEGER | Whether the course is an online package (1 = yes) | `1` |
+| `Online Registration Allowed` | INTEGER | Whether students can self-register online (1 = yes) | `1` |
+| `Free Preview Allowed` | INTEGER | Whether a free preview is available (1 = yes) | `0`, `1` |
+| `Num Students` | INTEGER | Total number of enrolled students | `130`, `4500` |
+| `Post Enrollment (Redirect URL)` | FLOAT | URL to redirect students to after enrollment | *(sparse)* |
+| `Tutors` | TEXT | Name(s) of the teacher(s) for this course | `Smt. Sriranjani Vijaykumar` |
+| `Tutord Ids` | INTEGER | Edmingle user ID(s) of the teacher(s) | `89807447` |
+| `Number of Lectures` | INTEGER | Total planned number of sessions | `35` |
+| `Duration` | TEXT | Duration expressed as number of classes or time | `35`, `6 months` |
+| `Duration - old` | FLOAT | Legacy duration field | *(sparse)* |
+| `Live session Schedule text` | TEXT | Free-text description of the live session schedule | `Start Date: 4th February 2026; Days: Every Wednesday & Friday; Time: 11:00 AM - 12:00 PM (IST)` |
+| `Course Description` | TEXT | Short course description paragraph |
+| `Overview` | TEXT | Full HTML course overview including learning outcomes, prerequisites, materials |
+| `About The course` | FLOAT | Legacy about section *(sparse)* |
+| `Know more about the course` | TEXT | Supplementary HTML content including sponsor details, about-the-teacher sections, FAQs |
+| `About this Learning Program` | FLOAT | For learning programs: program overview *(sparse)* |
+| `Learning Program Value Proposi` | FLOAT | For learning programs: value proposition *(sparse)* |
+| `How Learning Program Works` | FLOAT | For learning programs: operational details *(sparse)* |
+| `Know More About The Programs` | FLOAT | For learning programs: extended detail *(sparse)* |
+| `Ongoing Webinar Note` | FLOAT | Note shown when course is live/ongoing *(sparse)* |
+| `Eligibility` | FLOAT | Eligibility criteria (sometimes embedded in Overview instead) *(sparse)* |
+| `Course Sponsor` | TEXT | Sponsor name or CTA text for the course | *(usually blank or `Sponsor this course`)* |
+| `Meta Title` | FLOAT | SEO page title *(sparse)* |
+| `Meta Description` | FLOAT | SEO meta description *(sparse)* |
+| `Meta Keywords` | FLOAT | SEO keywords *(sparse)* |
+| `dsg link` | FLOAT | DSG (design/graphics) link *(sparse)* |
+| `Computer Based Assessment` | FLOAT | Whether course has a CBA *(sparse)* |
+| `Credits` | FLOAT | Academic credits awarded *(sparse)* |
+| `Product ID` | FLOAT | External product ID if applicable *(sparse)* |
+| `Viniyoga` | OBJECT | Traditional usage/application classification *(sparse)* |
+ 
+
+
 ## silver.users
 
 One row per student. When Edmingle sends a `user.user_created` or `user.user_updated` event, this table is upserted — if the student already exists, their fields are updated using COALESCE (existing non-null values are never overwritten by null).
@@ -268,7 +586,7 @@ One row per assessment event. There are four event types: `test_submitted`, `tes
 
 ---
 
-## silver.course_completion
+## silver.courses
 
 One row per course completion event. A student completing a course triggers a `course.user_course_completed` event.
 
@@ -313,12 +631,50 @@ One row per certificate issued to a student.
 | `received_at` | TIMESTAMPTZ | When this row was last written in IST | `2025-03-08 10:00:05+05:30` |
 
 ---
+## silver.course_batch_merge
 
+| Column | Type | Description | Example |
+|--------|------|-------------|---------|
+| `bundle_id` | INTEGER | Edmingle course bundle ID. Foreign key to `course_catalogue_data` and `batches_data` | `6339` |
+| `bundle_name` | TEXT | Name of the parent course bundle | `Siddhanta-Kaumudi - Atmanepada Prakaranam` |
+| `batch_id` | INTEGER | Edmingle batch ID. Foreign key to `batches_data.batch_id` and `bronze.student_courses_enrolled_raw.class_id` | `12442` |
+| `batch_name` | TEXT | Name of this specific batch run | `Siddhanta-Kaumudi - Atmanepada Prakaranam` |
+| `Course Ids` | FLOAT | Edmingle internal class/session IDs linked to this bundle | `9970` |
+| `Final_Status` | TEXT | Authoritative status for reporting. Derived by reconciling `batch_status`, `Catalogue_Status`, and any manual override. Use this over `Status` or `batch_status` for funnel and count metrics. | `Completed`, `Ongoing`, `Upcoming` |
+| `Catalogue_Status` | TEXT | Resolved status from the course catalogue side of the join. May differ from `batch_status` when Edmingle and the catalogue are out of sync. | `Completed`, `Ongoing`, `Upcoming` |
+| `Status` | TEXT | Raw status field from the course catalogue listing | `Completed`, `Ongoing`, `Upcoming` |
+| `batch_status` | TEXT | Raw batch status as returned by Edmingle | `Archived`, `Active`, `Completed` |
+| `Status_Adjustment_Reason` | TEXT | Free-text reason for any manual override of `Final_Status`. Null when no adjustment was made. | *(always null in current data)* |
+| `Is_Latest_Batch` | INTEGER | `1` if this is the most recent batch for its parent bundle. Used to deduplicate when aggregating at bundle level. | `1`, `0` |
+| `Include_In_Course_Count` | INTEGER | `1` if this batch should be included in official course-count reporting. Excludes test runs, duplicates, or inactive shells. | `1`, `0` |
+| `Has_Batch` | INTEGER | `1` if this bundle has at least one associated batch record. Always `1` in this file — batches with no bundle are excluded at source. | `1` |
+| `start_date` | DATE | Batch start date in `YYYY-MM-DD` format. Already converted from Unix timestamp. | `2014-01-23` |
+| `end_date` | DATE | Batch end date in `YYYY-MM-DD` format. Already converted from Unix timestamp. | `2014-02-14` |
+| `batch_enrollment_count` | FLOAT | Number of students enrolled in this specific batch | `385` |
+| `bundle_enrollment_count` | FLOAT | Total enrollment across all batches for the parent bundle. Sourced from `course_catalogue_data.Num Students` | `1240` |
+| `tutor_name` | TEXT | Name of the assigned tutor. `Team_Vyoma` is used as a placeholder when no specific tutor is assigned. | `Dr. Venkatasubramanian P`, `Team_Vyoma` |
+| `Course Division` | TEXT | Top-level content division | `Course`, `Learning Path`, `Learning Program` |
+| `Type` | TEXT | Delivery format | `Live Webinars`, `Past Webinars`, `Pre-recorded Video`, `Pre-recorded Audio`, `Discourse`, `E-text` |
+| `Subject` | TEXT | Subject area of the course | `Vyakarana Shastra`, `Vedic Chanting` |
+| `Level` | TEXT | Difficulty or proficiency level | `Basic`, `Intermediate`, `Shastra - Basic`, `Shastra - Advanced` |
+| `Language` | TEXT | Medium of instruction | `Sanskrit`, `English`, `Hindi`, `Tamil` |
+| `SSS Category` | TEXT | Internal SSS content category. Can be comma-separated for cross-category courses. | `Samskrta`, `Samskrti`, `Samskara` |
+| `Adhyayanam Category` | TEXT | Internal learning model category | `Bhashadhyayanam`, `Shastradhyayanam`, `Granthadhyayanam`, `Viniyoga` |
+| `Personas` | TEXT | Comma-separated list of target student personas | `Professionals ,Homemakers,Senior Citizens` |
+| `Position in Funnel` | TEXT | Marketing funnel position | `Top`, `Middle`, `Lower Middle`, `Bottom` |
+| `Term of Course` | TEXT | Duration category | `Very Short`, `Short`, `Mid`, `Long` |
+| `Texts` | TEXT | Primary Sanskrit texts studied in this course | `Siddhanta Kaumudi`, `Amarakosha` |
+| `Certificate` | BOOLEAN | Whether a certificate is awarded on completion | `True`, `False` |
+| `Number of Lectures` | FLOAT | Total planned number of sessions | `9`, `48` |
+| `Duration` | FLOAT | Course duration expressed as number of sessions or weeks | `8`, `24` |
+| `Computer Based Assessment` | FLOAT | Whether the course has a computer-based assessment | *(always null in current data)* |
+| `Course Sponsor` | TEXT | Sponsoring organisation or individual, if any | *(usually null)* |
+ 
 ---
 
-## silver.course_catalogue (Master Table)
+## silver.course_metadata
 
-This is the "Master" course table that joins everything together. It contains 65 columns covering course details, schedules, attendance, and performance metrics. Power BI reads directly from this table.
+This is the "course_metadata" course table that joins everything together. It contains 65 columns covering course details, schedules, attendance, and performance metrics. Power BI reads directly from this table.
 
 | Column | Type | Description |
 | :--- | :--- | :--- |
@@ -402,9 +758,10 @@ One row per batch. Populated daily by `fetch_course_batches.py`. Upsert key: `ba
 | Column | Type | Description |
 |---|---|---|
 | `batch_id` | BIGINT | Edmingle batch identifier |
-| `bundle_id` | BIGINT | Parent bundle |
 | `batch_name` | TEXT | Batch name |
-| `batch_status` | TEXT | active / archived |
+| `bundle_id` | BIGINT | Parent bundle |
+| `bundle_name` | TEXT | bundle name |
+| `batch_status` | TEXT | active / archived / completed |
 | `start_date_ist` | TIMESTAMPTZ | Batch start date in IST |
 | `end_date_ist` | TIMESTAMPTZ | Batch end date in IST |
 | `tutor_id` | BIGINT | Primary teacher ID |
@@ -413,13 +770,6 @@ One row per batch. Populated daily by `fetch_course_batches.py`. Upsert key: `ba
 
 ---
 
-## silver.course_lifecycle
-
-One row per batch from the Course Lifecycle MIS tracker. Populated once by `csv_transform_course_silver.py`. Upsert key: `course_id` (maps to `bundle_id`).
-
-Key columns: `course_id`, `course_name`, `type_of_launch`, `first_class_date`, `last_class_date`, `enrollments_on_fc`, `enrollments_on_lc`, `avg_attendance`, `total_certified`, `overall_rating`.
-
----
 
 ## silver.course_batch_merge
 
