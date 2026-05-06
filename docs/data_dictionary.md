@@ -5,6 +5,7 @@ Every table in the database, with every column explained.
 ---
 ## File Structure
 
+```
 Vyoma_DataWarehouse/
 ├─ analytics/
 │  ├─ build_courses.py
@@ -122,7 +123,8 @@ Vyoma_DataWarehouse/
 ├─ .env.example
 ├─ .gitignore
 └─ README.md
-
+```
+---
 
 ## bronze.webhook_events
 
@@ -270,6 +272,7 @@ Students from `studentexport.csv` whose email address could not be matched to an
 ---
 
 ## bronze.course_lifecycle_tracker (Elearning_MIS_Merged_Tracker)
+A master operational tracker maintained manually (likely in Google Sheets) that records the end-to-end lifecycle of every course run on the platform. Each row represents one course batch, from finalisation through post-production closeout. Contains ~1,055 rows and 107 columns.
 
 | Column | Type | Description | Example |
 |--------|------|-------------|---------|
@@ -383,6 +386,7 @@ Students from `studentexport.csv` whose email address could not be matched to an
 ---
  
 ## bronze.batches_data
+A clean, structured export of all batch-level records from Edmingle. Each row represents one batch (class group) linked to a course bundle. Contains ~845 rows and 12 columns. This is the closest thing to a normalized batch dimension table available in the source exports.
 
 | Column | Type | Description | Example |
 |--------|------|-------------|---------|
@@ -402,6 +406,7 @@ Students from `studentexport.csv` whose email address could not be matched to an
 ---
  
 ## bronze.course_catalogue
+A full export of the course catalogue from the Vyoma/Sanskritfromhome platform. Each row represents one course (bundle) as it appears on the public-facing website. Contains 59 columns. Includes rich HTML content fields (overviews, descriptions) alongside structured
 
 | Column | Type | Description | Example |
 |--------|------|-------------|---------|
@@ -632,6 +637,7 @@ One row per certificate issued to a student.
 
 ---
 ## silver.course_batch_merge
+A derived, analysis-ready table joining batch-level operational data with course catalogue metadata. Each row represents one batch enriched with its parent bundle's classification and status logic. 843 rows, 34 columns, one row per `batch_id`.
 
 | Column | Type | Description | Example |
 |--------|------|-------------|---------|
@@ -770,63 +776,24 @@ One row per batch. Populated daily by `fetch_course_batches.py`. Upsert key: `ba
 
 ---
 
-
-## silver.course_batch_merge
-
-Denormalised flat table joining course_catalogue + course_batches + course_lifecycle. One row per batch. Fully rebuilt (TRUNCATE + INSERT) on every `run_course_pipeline.py` run. Power BI reads directly from this table.
-| Column | Type | Description |
-|---|---|---|
-Bundle id
-Course Name
-batch_id
-batch_name
-Num Students (change to Bundle_enrolment _Count)
-Tutors
-Tutord Ids
-start_date
-end_date
-admitted_students (change to batch_enrollment_count)
-Course Ids
-Subject
-Level
-Language
-Texts
-Type
-Course Division
-Certificate
-Course Sponsor
-Status
-Number of Lectures
-Duration
-Personas
-Computer Based Assessment
-SSS Category
-Adhyayanam Category
-Term of Course
-Position in Funnel
-
-
----
-
 ## silver.attendance_data
 
 One row per batch per class date. Populated daily by `fetch_attendance.py`. Upsert key: `(batch_id, class_date)`.
-
-| Column | Type | Description |
-|---|---|---|
-batch_id
-batch_name
-class_id
-bundle_id
-bundle_name
-class_date
-present_count
-absent_count
-total_records
-attendance_pct
-attendance_id
-teacher_id
-teacher_name
-class_duration
-pull_date
-loaded_at
+| Column | Type | Description | Example |
+|--------|------|-------------|---------|
+| `bundle_id` | INTEGER | Edmingle course bundle ID. Foreign key to `course_batch_merge.bundle_id` and `course_catalogue_data.Bundle id` | `27250` |
+| `bundle_name` | TEXT | Name of the parent course bundle | `test course` |
+| `batch_id` | INTEGER | Edmingle batch ID. Foreign key to `course_batch_merge.batch_id` and `batches_data.batch_id` | `70610` |
+| `batch_name` | TEXT | Name of the batch this class belongs to | `Test Course` |
+| `class_id` | INTEGER | Edmingle class (session) ID. Unique identifier for a single scheduled session | `199329` |
+| `attendance_id` | INTEGER | Internal Edmingle ID for this attendance record | `5783151` |
+| `class_date` | DATE | Date the class was held, in `YYYY-MM-DD` format | `2026-05-04` |
+| `class_duration` | TEXT | Duration of the class session | `1 hour` |
+| `teacher_id` | INTEGER | Edmingle user ID of the teacher who conducted the session | `49815891` |
+| `teacher_name` | TEXT | Name of the teacher who conducted the session | `Dr. Maheshwari H` |
+| `present_count` | INTEGER | Number of students marked present for this session | `1` |
+| `absent_count` | INTEGER | Number of students marked absent for this session | `3` |
+| `total_records` | INTEGER | Total number of student records for this session (`present_count + absent_count`) | `4` |
+| `attendance_pct` | FLOAT | Attendance percentage for this session (`present_count / total_records * 100`) | `25.0` |
+| `pull_date` | DATE | Date this data was pulled from Edmingle, in `YYYY-MM-DD` format | `2026-05-04` |
+| `loaded_at` | TIMESTAMP | Datetime when this row was inserted into the database | `2026-05-05 00:52:09` |
